@@ -1,6 +1,146 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { formatDateTime } = require("../utils/date");
+const puppeteer = require("puppeteer");
+
+let browser = null;
+
+
+async function scrapeKongfz(isbn) {
+  // console.log("\n[Step 1] Launching browser...");
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+  
+    try {
+      // console.log("[Step 2] Creating new page...");
+      const page = await browser.newPage();
+      page.setViewport({ width: 1280, height: 800 });
+      
+      const searchUrl = `https://search.kongfz.com/product/?keyword=${isbn}&dataType=0`;
+      // console.log("[Step 3] Navigating to search URL:", searchUrl);
+      await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 30000 });
+      
+      
+      // await page.waitForSelector(".item-box, .no-result, .result-empty", { timeout: 15000 }).catch(() => {});
+      
+      
+      // console.log("\n[Step 4] Waiting for user to check search results...");
+      
+      // 使用 page.evaluate 直接提取第一个图书信息
+      // console.log("[DEBUG] Extracting first book info...");
+      const firstBook = await page.evaluate(() => {
+        const selectors = [
+          '.item-box a',           // 可能的图书项链接
+          '.product-item a',       // 产品项
+          '.result-item a',        // 结果项
+          '[class*="item"] a',   // 包含 item 的类
+          '#app a'                 // app 内的所有链接
+        ];
+        
+        for (const sel of selectors) {
+          const elements = document.querySelectorAll(sel);
+          for (const el of elements) {
+            // 只保留包含 /book/ 的链接
+            if (el.href && el.href.includes('/book/')) {
+              const text = el.innerText?.trim() || '';
+              // 按 \n 分割，前部分是书名，后部分是其他信息
+              const parts = text.split('\n');
+              const title = parts[0] || '';
+              const otherInfo = parts[1] || '';
+              // 作者是 otherInfo 中第一个空格前的部分
+              const author = otherInfo.split(' ')[0] || '';
+              
+              return {
+                title: title,
+                author: author,
+                url: el.href
+              };
+            }
+          }
+        }
+        return null;
+      });
+      
+      // console.log("\n[DEBUG] First book info:");
+      // console.log(JSON.stringify(firstBook, null, 2));
+      
+      // 打开第一个图书链接
+      if (firstBook && firstBook.url) {
+        // console.log(`\n[DEBUG] Opening first book URL: ${firstBook.url}`);
+        await page.goto(firstBook.url, { waitUntil: "networkidle2", timeout: 30000 });
+        
+        
+        
+        
+        
+        // 提取图书详细信息
+        // console.log("[DEBUG] Extracting book details...");
+        const bookDetails = await page.evaluate(() => {
+          const getText = (sel) => {
+            const el = document.querySelector(sel);
+            return el ? el.innerText.trim() : '';
+          };
+          
+          // 尝试多种选择器获取内容简介
+          const descSelectors = [
+            '.description',
+            '.intro',
+            '.product-intro',
+            '[class*="description"]',
+            '[class*="intro"]',
+            '.jianjie', // 直接针对该页面的类名
+      '[class*="jianjie"]', // 模糊匹配包含 jianjie 的类名
+      '.jianjie span', // 精确到内容所在的 span (根据提供的 HTML 结构)
+      '.detail-con-right ul .jianjie' // 更具体的层级选择器
+          ];
+          
+          let description = '';
+          for (const sel of descSelectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+              // 获取文本并去除可能存在的标题（如“内容简介:”）
+              let text = el.innerText.trim();
+              // 如果文本以“内容简介”开头，尝试截取后面的内容
+              if (text.startsWith('内容简介')) {
+                text = text.replace(/内容简介[:：]?\s*/, '');
+              }
+              // 确保文本长度，防止提取到空标题
+              if (text.length > 10) {
+                description = text;
+                break;
+              }
+            }
+          }
+          
+          return {
+            description: description
+          };
+        });
+        
+        // 合并firstBook和bookDetails
+        const finalBookInfo = {
+          title: firstBook.title,
+          author: firstBook.author,
+          description: bookDetails.description
+        };
+        
+        // console.log("\n[DEBUG] Book details:");
+        // console.log(JSON.stringify(finalBookInfo, null, 2));
+        return finalBookInfo;
+        
+      } else {
+        // console.log("[DEBUG] No book found!");
+        return null;
+      }
+      
+    }  finally {
+      console.log("\n Closing browser...");
+      await browser.close();
+      console.log("Browser closed.");
+    }
+}
 
 // Valid genre and language values from Prisma schema
 const VALID_GENRES = ["Technology", "Fiction", "Science", "History", "Management"];
@@ -189,6 +329,46 @@ async function viewBooks(query) {
 }
 
 /**
+ * Scan book by ISBN/barcode (L2.4)
+ * Validates ISBN/barcode format and returns book details
+ */
+async function scanBook(isbn) {
+  if (!isbn || typeof isbn !== "string") {
+    throw new AppError(400, "ISBN parameter is required");
+  }
+
+  const cleanedIsbn = isbn.trim();
+
+  if (!isValidIsbn(cleanedIsbn)) {
+    throw new AppError(400, "Invalid ISBN or barcode format");
+  }
+
+  const book = await prisma.book.findUnique({
+    where: { isbn: cleanedIsbn },
+  });
+
+  if (!book) {
+    throw new AppError(404, "Book not found with this ISBN");
+  }
+
+  return toBookDetail(book);
+}
+
+function isValidIsbn(code) {
+  const cleaned = code.replace(/[-\s]/g, "");
+  if (cleaned.length === 10) {
+    return /^\d{9}[\dXx]$/.test(cleaned);
+  }
+  if (cleaned.length === 13) {
+    return /^\d{13}$/.test(cleaned);
+  }
+  if (cleaned.length > 0 && cleaned.length <= 20) {
+    return /^[\w-]+$/.test(cleaned);
+  }
+  return false;
+}
+
+/**
  * Delete/Archive a book (L1.4)
  */
 async function deleteBook(bookId, userId) {
@@ -275,4 +455,6 @@ module.exports = {
   editBook,
   viewBooks,
   deleteBook,
+  scanBook,
+  scrapeKongfz,
 };

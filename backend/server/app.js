@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 
 const apiRoutes = require("./routes");
 
@@ -9,6 +10,7 @@ const { sendError } = require("./lib/response");
 const app = express();
 
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 
 app.get("/health", (req, res) => {

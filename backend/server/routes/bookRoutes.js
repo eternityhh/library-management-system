@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.get("/books", bookController.listBooks);
 router.get("/books/search", bookController.searchBooks);
+router.get("/books/scrape", bookController.scrapeBookByISBN);
 
 //新增路由
 router.get("/books/new", bookController.getNewBooks);

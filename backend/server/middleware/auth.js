@@ -4,10 +4,23 @@ const { verifyToken } = require("../lib/token");
 
 async function requireAuth(req, res, next) {
   try {
-    const authorization = req.headers.authorization || "";
-    const [type, token] = authorization.split(" ");
+    let token = "";
 
-    if (type !== "Bearer" || !token) {
+    const authorization = req.headers.authorization || "";
+    const [type, headerToken] = authorization.split(" ");
+
+    if (type === "Bearer" && headerToken) {
+      token = headerToken;
+    } else if (req.headers.cookie) {
+      const cookies = req.headers.cookie.split(";").reduce((acc, c) => {
+        const [key, val] = c.trim().split("=");
+        acc[key] = val;
+        return acc;
+      }, {});
+      token = cookies["token"] || "";
+    }
+
+    if (!token) {
       throw new AppError(401, "Not logged in or invalid token");
     }
 

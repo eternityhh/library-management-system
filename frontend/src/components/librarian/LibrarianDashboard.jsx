@@ -68,6 +68,7 @@ const LibrarianDashboard = ({
     description: '',
     cover: ''
   })
+  const [lookupLoading, setLookupLoading] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     author: '',
@@ -273,6 +274,38 @@ const LibrarianDashboard = ({
       return () => clearTimeout(timer)
     }
   }, [error, success])
+
+  const handleLookupIsbn = async (isbn) => {
+    if (!isbn || isbn.trim().length < 10) {
+      notify('error', 'Please enter a valid ISBN (at least 10 characters)')
+      return
+    }
+    setLookupLoading(true)
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE}/books/lookup?isbn=${encodeURIComponent(isbn)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await res.json()
+      if (result.code === 200 && result.data) {
+        const book = result.data
+        setAddForm(prev => ({
+          ...prev,
+          title: book.title || prev.title,
+          author: book.authors?.[0] || prev.author,
+          cover: book.cover || prev.cover,
+          description: book.description || prev.description
+        }))
+        notify('success', 'Book info found! Please verify and fill in remaining fields.')
+      } else {
+        notify('error', result.message || 'Book not found. Please fill in manually.')
+      }
+    } catch (err) {
+      notify('error', 'Failed to lookup ISBN. Please fill in manually.')
+    } finally {
+      setLookupLoading(false)
+    }
+  }
 
   const handleAddBook = async (e) => {
     e.preventDefault()
@@ -1284,6 +1317,35 @@ const LibrarianDashboard = ({
         </div>
         <form onSubmit={handleAddBook}>
           <div className="form-group">
+            <label>ISBN *</label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                required
+                value={addForm.isbn}
+                onChange={(e) => setAddForm({ ...addForm, isbn: e.target.value })}
+                placeholder="Enter ISBN"
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                onClick={() => handleLookupIsbn(addForm.isbn)}
+                disabled={lookupLoading || !addForm.isbn}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: lookupLoading ? '#ccc' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: lookupLoading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {lookupLoading ? 'Searching...' : 'Lookup'}
+              </button>
+            </div>
+          </div>
+          <div className="form-group">
             <label>Title *</label>
             <input
               type="text"
@@ -1301,16 +1363,6 @@ const LibrarianDashboard = ({
               value={addForm.author}
               onChange={(e) => setAddForm({ ...addForm, author: e.target.value })}
               placeholder="Enter author name"
-            />
-          </div>
-          <div className="form-group">
-            <label>ISBN *</label>
-            <input
-              type="text"
-              required
-              value={addForm.isbn}
-              onChange={(e) => setAddForm({ ...addForm, isbn: e.target.value })}
-              placeholder="Enter ISBN"
             />
           </div>
           <div className="form-row">

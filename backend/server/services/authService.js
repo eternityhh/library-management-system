@@ -58,7 +58,7 @@ async function register(payload) {
   };
 }
 
-async function login(payload) {
+async function login(payload, res) {
   const { userName, password } = payload || {};
 
   if (!userName || !password) {
@@ -82,6 +82,14 @@ async function login(payload) {
     userId: user.id,
     role: user.role,
   });
+
+  if (res) {
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      sameSite: "lax",
+    });
+  }
 
   return {
     token,
