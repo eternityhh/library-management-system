@@ -8,6 +8,7 @@ const router = express.Router();
 const adminOnly = [requireAuth, requireRole(["ADMIN"])];
 
 router.get("/admin/config", ...adminOnly, adminConfigController.getConfig);
-router.put("/admin/config", ...adminOnly, adminConfigController.updateConfig);
+router.put("/admin/config/borrow-rules", ...adminOnly, adminConfigController.updateBorrowRules);
+router.put("/admin/config/fine-rate", ...adminOnly, adminConfigController.updateFineRate);
 
 module.exports = router;
