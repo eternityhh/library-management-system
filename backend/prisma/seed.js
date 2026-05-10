@@ -364,7 +364,7 @@ async function main() {
   if (bookCopiesData.length > 0) {
     const copies = await prisma.bookCopy.createMany({
       data: bookCopiesData,
-      skipDuplicates: true,
+      // skipDuplicates: true,
     });
 
     console.log(`Seeded book copies: ${copies.count}`);
