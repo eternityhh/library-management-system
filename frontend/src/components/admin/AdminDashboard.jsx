@@ -70,15 +70,6 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
             <span>User Manage</span>
           </div>
 
-          {/* 新增 R2 要求菜单 */}
-          <div className={`menu-item ${currentPage === ADMIN_PAGES.LIBRARIAN_MANAGE ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.LIBRARIAN_MANAGE)}>
-            <span className="icon">👨‍💼</span>
-            <span>Librarian Manage</span>
-          </div>
-          <div className={`menu-item ${currentPage === ADMIN_PAGES.ROLE_PERMISSION ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.ROLE_PERMISSION)}>
-            <span className="icon">🔐</span>
-            <span>Role Permission</span>
-          </div>
           <div className={`menu-item ${currentPage === ADMIN_PAGES.SYSTEM_CONFIG ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.SYSTEM_CONFIG)}>
             <span className="icon">⚙️</span>
             <span>System Config</span>
