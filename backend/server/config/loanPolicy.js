@@ -20,11 +20,11 @@ function envOverrideNumber(name) {
  * 合并「管理员在库中配置」与可选环境变量覆盖（回归测试可在 require app 前设置 LOAN_*）。
  */
 async function getLoanPolicy() {
-  const db = await adminConfigService.getConfig();
+  const db = await adminConfigService.getAdminConfig();
   return {
-    maxBooks: envOverrideInt("LOAN_MAX_BOOKS") ?? db.maxBooks,
-    maxDays: envOverrideInt("LOAN_MAX_DAYS") ?? db.maxDays,
-    fineRate: envOverrideNumber("LOAN_FINE_RATE") ?? db.fineRate,
+    maxBooks: envOverrideInt("LOAN_MAX_BOOKS") ?? db.borrowRules.maxBorrowBooks,
+    maxDays: envOverrideInt("LOAN_MAX_DAYS") ?? db.borrowRules.maxBorrowDays,
+    fineRate: envOverrideNumber("LOAN_FINE_RATE") ?? db.fineRules.dailyFineRate,
   };
 }
 
