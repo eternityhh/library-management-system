@@ -1,6 +1,6 @@
-const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const auditLogService = require("./auditLogService");
+const configService = require("./configService");
 
 const CONFIG_KEYS = {
   BORROW_MAX_DAYS: "BORROW_MAX_DAYS",
@@ -24,63 +24,20 @@ function ensureObject(payload) {
   }
 }
 
-function parseIntConfig(key, value, defaultValue) {
-  if (value === null || value === undefined) {
-    return defaultValue;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) {
-    throw new AppError(500, "Config parse error");
-  }
-  return parsed;
-}
-
-function parseDecimalConfig(value, defaultValue) {
-  if (value === null || value === undefined) {
-    return defaultValue;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new AppError(500, "Config parse error");
-  }
-  return parsed;
-}
-
-function toConfigMap(records) {
-  return new Map(records.map((item) => [item.key, item.value]));
-}
-
 async function getAdminConfig() {
-  const records = await prisma.config.findMany({
-    where: {
-      key: {
-        in: [CONFIG_KEYS.BORROW_MAX_DAYS, CONFIG_KEYS.BORROW_MAX_BOOKS, CONFIG_KEYS.FINE_DAILY_RATE],
-      },
-    },
-  });
-
-  const configMap = toConfigMap(records);
+  const [maxBorrowDays, maxBorrowBooks, dailyFineRate] = await Promise.all([
+    configService.getInt(CONFIG_KEYS.BORROW_MAX_DAYS, DEFAULT_CONFIG.borrowRules.maxBorrowDays),
+    configService.getInt(CONFIG_KEYS.BORROW_MAX_BOOKS, DEFAULT_CONFIG.borrowRules.maxBorrowBooks),
+    configService.getDecimal(CONFIG_KEYS.FINE_DAILY_RATE, DEFAULT_CONFIG.fineRules.dailyFineRate),
+  ]);
 
   return {
     borrowRules: {
-      maxBorrowDays: parseIntConfig(
-        CONFIG_KEYS.BORROW_MAX_DAYS,
-        configMap.get(CONFIG_KEYS.BORROW_MAX_DAYS),
-        DEFAULT_CONFIG.borrowRules.maxBorrowDays,
-      ),
-      maxBorrowBooks: parseIntConfig(
-        CONFIG_KEYS.BORROW_MAX_BOOKS,
-        configMap.get(CONFIG_KEYS.BORROW_MAX_BOOKS),
-        DEFAULT_CONFIG.borrowRules.maxBorrowBooks,
-      ),
+      maxBorrowDays,
+      maxBorrowBooks,
     },
     fineRules: {
-      dailyFineRate: parseDecimalConfig(
-        configMap.get(CONFIG_KEYS.FINE_DAILY_RATE),
-        DEFAULT_CONFIG.fineRules.dailyFineRate,
-      ),
+      dailyFineRate,
     },
   };
 }
@@ -118,25 +75,14 @@ function validateFineRate(payload) {
   }
 }
 
-function upsertConfigValue(key, value) {
-  return prisma.config.upsert({
-    where: { key },
-    update: { value: String(value) },
-    create: {
-      key,
-      value: String(value),
-    },
-  });
-}
-
 async function updateBorrowRules(operatorId, payload) {
   validateBorrowRules(payload);
 
   const before = await getAdminConfig();
 
-  await prisma.$transaction([
-    upsertConfigValue(CONFIG_KEYS.BORROW_MAX_DAYS, payload.maxBorrowDays),
-    upsertConfigValue(CONFIG_KEYS.BORROW_MAX_BOOKS, payload.maxBorrowBooks),
+  await Promise.all([
+    configService.setValue(CONFIG_KEYS.BORROW_MAX_DAYS, payload.maxBorrowDays),
+    configService.setValue(CONFIG_KEYS.BORROW_MAX_BOOKS, payload.maxBorrowBooks),
   ]);
 
   await auditLogService.record(operatorId, "ADMIN_UPDATE_BORROW_RULES", "Config", null, {
@@ -160,7 +106,7 @@ async function updateFineRate(operatorId, payload) {
 
   const before = await getAdminConfig();
 
-  await upsertConfigValue(CONFIG_KEYS.FINE_DAILY_RATE, payload.dailyFineRate.toFixed(2));
+  await configService.setValue(CONFIG_KEYS.FINE_DAILY_RATE, payload.dailyFineRate.toFixed(2));
 
   await auditLogService.record(operatorId, "ADMIN_UPDATE_FINE_RATE", "Config", null, {
     before: before.fineRules,
