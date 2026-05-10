@@ -1,10 +1,16 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
-const { formatDateTime, addDays } = require("../utils/date");
-
-const DEFAULT_LOAN_DAYS = 30;
-const OVERDUE_FINE_AMOUNT = 5;
+const { getLoanPolicy } = require("../config/loanPolicy");
+const { formatDateTime, addDays, overdueWholeDays } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 const ACTIVE_LOAN_STATUSES = ["Borrowing", "Overdue"];
+
+async function computeOverdueFineAmount(loan, returnDate) {
+  const { fineRate } = await getLoanPolicy();
+  const days = overdueWholeDays(loan.dueDate, returnDate);
+  if (days <= 0) return 0;
+  return Math.round(days * fineRate * 100) / 100;
+}
 
 async function syncOverdueLoans(where = {}) {
   const now = new Date();
@@ -180,7 +186,8 @@ async function ensureBorrowAllowed(
 
 async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
   const checkoutDate = new Date();
-  const dueDate = addDays(checkoutDate, DEFAULT_LOAN_DAYS);
+  const { maxDays } = await getLoanPolicy();
+  const dueDate = addDays(checkoutDate, maxDays);
   const nextAvailableCopies = book.availableCopies - 1;
 
   const loan = await prisma.$transaction(async (tx) => {
@@ -472,7 +479,8 @@ async function renewLoan(userId, loanId) {
     throw new AppError(400, "This book has been reserved by another reader and cannot be renewed");
   }
 
-  const newDueDate = addDays(loan.dueDate, 30);
+  const { maxDays } = await getLoanPolicy();
+  const newDueDate = addDays(loan.dueDate, maxDays);
   const updatedLoan = await prisma.loan.update({
     where: { id: loanId },
     data: {
@@ -509,15 +517,35 @@ async function returnLoan(userId, loanId) {
     throw new AppError(404, "Book not found");
   }
 
-  const { loan: updatedLoan, nextAvailableCopies } = await finalizeLoanReturn(
-    loan,
-    userId,
-    "RETURN_LOAN",
-    JSON.stringify({
-      borrowerId: loan.userId,
-      bookId: loan.bookId,
-    }),
-  );
+  const now = new Date();
+  const fineAmount = await computeOverdueFineAmount(loan, now);
+
+  const updatedLoan = await prisma.$transaction(async (tx) => {
+    const returnedLoan = await tx.loan.update({
+      where: { id: loanId },
+      data: {
+        returnDate: now,
+        status: "Returned",
+        fineAmount,
+        finePaid: fineAmount === 0,
+      },
+      include: {
+        book: true,
+      },
+    });
+
+    const nextAvailableCopies = returnedLoan.book.availableCopies + 1;
+
+    await tx.book.update({
+      where: { id: returnedLoan.bookId },
+      data: {
+        availableCopies: nextAvailableCopies,
+        available: true,
+      },
+    });
+
+    return returnedLoan;
+  });
 
   return {
     id: updatedLoan.id,
@@ -611,17 +639,9 @@ async function payFine(userId, loanId, payload) {
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId,
-        action: "PAY_FINE",
-        entity: "Loan",
-        entityId: loanId,
-        detail: JSON.stringify({
-          amount: fineAmount,
-          method: "SIMULATED",
-        }),
-      },
+    await auditLogService.recordWithClient(tx, userId, "PAY_FINE", "Loan", loanId, {
+      amount: fineAmount,
+      method: "SIMULATED",
     });
 
     return {

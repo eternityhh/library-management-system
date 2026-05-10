@@ -3,10 +3,16 @@ import AdminMessageBar from './components/AdminMessageBar'
 import { ADMIN_PAGES } from './constants'
 import AdminOverview from './pages/AdminOverview'
 import UserManagement from './pages/UserManagement'
+import SystemConfig from './pages/SystemConfig'
+import AuditLogs from './pages/AuditLogs'
 
 const PAGE_NAME = {
   [ADMIN_PAGES.OVERVIEW]: 'Overview',
-  [ADMIN_PAGES.USER_MANAGE]: 'User Manage'
+  [ADMIN_PAGES.USER_MANAGE]: 'User Manage',
+  [ADMIN_PAGES.LIBRARIAN_MANAGE]: 'Librarian Manage',
+  [ADMIN_PAGES.ROLE_PERMISSION]: 'Role Permission',
+  [ADMIN_PAGES.SYSTEM_CONFIG]: 'System Config',
+  [ADMIN_PAGES.AUDIT_LOGS]: 'Audit Logs'
 }
 
 const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
@@ -27,6 +33,12 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
     switch (currentPage) {
       case ADMIN_PAGES.USER_MANAGE:
         return <UserManagement currentUserId={currentUserId} onNotify={notify} />
+      case ADMIN_PAGES.SYSTEM_CONFIG:
+        return <SystemConfig currentUserId={currentUserId} onNotify={notify} />
+      case ADMIN_PAGES.AUDIT_LOGS:
+        return (
+          <AuditLogs currentUserId={currentUserId} onNotify={notify} />
+        )
       case ADMIN_PAGES.OVERVIEW:
       default:
         return <AdminOverview user={user} onNavigate={setCurrentPage} />
@@ -46,6 +58,16 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
             <span className="icon">🧩</span>
             <span>User Manage</span>
           </div>
+
+          <div className={`menu-item ${currentPage === ADMIN_PAGES.SYSTEM_CONFIG ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.SYSTEM_CONFIG)}>
+            <span className="icon">⚙️</span>
+            <span>System Config</span>
+          </div>
+          <div className={`menu-item ${currentPage === ADMIN_PAGES.AUDIT_LOGS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.AUDIT_LOGS)}>
+            <span className="icon">📜</span>
+            <span>Audit Logs</span>
+          </div>
+
         </nav>
         <div className="user-info">
           <div className="user-avatar">{user.name?.[0]?.toUpperCase() || 'A'}</div>

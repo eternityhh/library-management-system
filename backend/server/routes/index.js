@@ -13,11 +13,12 @@ const adminUserRoutes = require("./adminUserRoutes");
 const adminRoutes = require("./adminRoutes");
 const announcementRoutes = require("./announcementRoutes");  // 公告路由
 const librarianRoutes = require("./librarianRoutes");
+const adminAuditRoutes = require("./adminAuditRoutes");
+const adminConfigRoutes = require("./adminConfigRoutes");
 
 const router = express.Router();
 
 router.use(authRoutes);
-router.use("/admin", adminRoutes);
 router.use("/librarian", librarianRoutes);
 router.use(bookRoutes);
 router.use(holdRoutes);
@@ -29,5 +30,8 @@ router.use(acquisitionRoutes);
 router.use(dashboardRoutes);     
 router.use(adminUserRoutes);
 router.use(announcementRoutes);
+router.use(adminAuditRoutes);
+router.use(adminConfigRoutes);
+router.use("/admin", adminRoutes);
 
 module.exports = router;

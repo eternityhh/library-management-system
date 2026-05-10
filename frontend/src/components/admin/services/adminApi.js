@@ -51,5 +51,16 @@ export const adminApi = {
   resetUserPassword: (id, newPassword) => request(`/users/${id}/reset-password`, {
     method: 'POST',
     body: JSON.stringify(newPassword ? { newPassword } : {})
-  })
+  }),
+
+  getConfig: () => request('/config'),
+  updateBorrowRules: (body) => request('/config/borrow-rules', {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  }),
+  updateFineRate: (body) => request('/config/fine-rate', {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  }),
+  listAuditLogs: (params) => request(`/audit-logs${qs(params)}`)
 }
