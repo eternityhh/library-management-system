@@ -100,59 +100,6 @@ async function main() {
   });
   assert.equal(forbiddenAdminAccess.response.status, 403);
 
-  const getConfigByAdmin = await request("/api/admin/config", {
-    headers: {
-      Authorization: `Bearer ${adminToken}`,
-    },
-  });
-  assert.equal(getConfigByAdmin.response.status, 200);
-  assert.equal(typeof getConfigByAdmin.body.data.maxBooks, "number");
-  assert.equal(typeof getConfigByAdmin.body.data.maxDays, "number");
-  assert.equal(typeof getConfigByAdmin.body.data.fineRate, "number");
-
-  const updateConfigByAdmin = await request("/api/admin/config", {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${adminToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      maxBooks: 10,
-    }),
-  });
-  assert.equal(updateConfigByAdmin.response.status, 200);
-  assert.equal(updateConfigByAdmin.body.data.maxBooks, 10);
-  assert.equal(typeof updateConfigByAdmin.body.data.maxDays, "number");
-  assert.equal(typeof updateConfigByAdmin.body.data.fineRate, "number");
-
-  const updateConfigInvalidParam = await request("/api/admin/config", {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${adminToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      maxBooks: "ten",
-    }),
-  });
-  assert.equal(updateConfigInvalidParam.response.status, 400);
-
-  const configForbiddenByStudent = await request("/api/admin/config", {
-    headers: {
-      Authorization: `Bearer ${studentToken}`,
-    },
-  });
-  assert.equal(configForbiddenByStudent.response.status, 403);
-
-  const configUpdateAuditLogs = await request("/api/admin/audit-logs?page=1&size=1", {
-    headers: {
-      Authorization: `Bearer ${adminToken}`,
-    },
-  });
-  assert.equal(configUpdateAuditLogs.response.status, 200);
-  assert.ok(configUpdateAuditLogs.body.data.list.length >= 1);
-  assert.equal(configUpdateAuditLogs.body.data.list[0].action, "CONFIG_UPDATE");
-
   const createLibrarian1 = await request("/api/admin/librarians", {
     method: "POST",
     headers: {

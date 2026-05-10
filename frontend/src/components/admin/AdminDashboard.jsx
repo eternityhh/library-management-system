@@ -13,6 +13,13 @@ const PAGE_NAME = {
   [ADMIN_PAGES.AUDIT_LOGS]: 'Audit Logs'
 }
 
+const PlaceholderPage = ({ title, description }) => (
+  <section style={{ padding: '24px 28px' }}>
+    <h2>{title}</h2>
+    <p style={{ color: '#667085', marginTop: 8 }}>{description}</p>
+  </section>
+)
+
 const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
   const [currentPage, setCurrentPage] = useState(ADMIN_PAGES.OVERVIEW)
   const [message, setMessage] = useState({ type: '', text: '' })
@@ -31,6 +38,20 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
     switch (currentPage) {
       case ADMIN_PAGES.USER_MANAGE:
         return <UserManagement currentUserId={currentUserId} onNotify={notify} />
+      case ADMIN_PAGES.SYSTEM_CONFIG:
+        return (
+          <PlaceholderPage
+            title="System Config"
+            description="System config page is ready for the R2 config panel integration."
+          />
+        )
+      case ADMIN_PAGES.AUDIT_LOGS:
+        return (
+          <PlaceholderPage
+            title="Audit Logs"
+            description="Audit logs page is ready for the R2 logs table integration."
+          />
+        )
       case ADMIN_PAGES.OVERVIEW:
       default:
         return <AdminOverview user={user} onNavigate={setCurrentPage} />
