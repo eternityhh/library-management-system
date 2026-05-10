@@ -3,6 +3,7 @@ import AdminMessageBar from './components/AdminMessageBar'
 import { ADMIN_PAGES } from './constants'
 import AdminOverview from './pages/AdminOverview'
 import UserManagement from './pages/UserManagement'
+import AuditLogs from './pages/AuditLogs'
 
 const PAGE_NAME = {
   [ADMIN_PAGES.OVERVIEW]: 'Overview',
@@ -47,10 +48,7 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
         )
       case ADMIN_PAGES.AUDIT_LOGS:
         return (
-          <PlaceholderPage
-            title="Audit Logs"
-            description="Audit logs page is ready for the R2 logs table integration."
-          />
+          <AuditLogs currentUserId={currentUserId} onNotify={notify} />
         )
       case ADMIN_PAGES.OVERVIEW:
       default:
