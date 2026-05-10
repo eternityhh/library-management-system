@@ -238,11 +238,11 @@ async function deleteLibrarian(operatorId, librarianId) {
 
     await tx.auditLog.create({
       data: {
-        operatorId,
+        userId: operatorId,
         action: "ADMIN_DELETE_LIBRARIAN",
-        targetType: "User",
-        targetId: librarianId,
-        detail,
+        entity: "User",
+        entityId: librarianId,
+        detail: JSON.stringify(detail),
       },
     });
   });
