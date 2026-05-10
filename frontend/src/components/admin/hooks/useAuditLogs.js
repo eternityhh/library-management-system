@@ -1,4 +1,3 @@
-cat > frontend/src/components/admin/hooks/useAuditLogs.js << 'EOF'
 import { useState, useEffect, useCallback } from 'react';
 import { adminApi } from '../services/adminApi';
 
@@ -52,4 +51,3 @@ export default function useAuditLogs(initialQuery = {}) {
 
     return { query, data, loading, error, setQueryPart, reload };
 }
-EOF
