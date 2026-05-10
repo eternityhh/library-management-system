@@ -3,6 +3,7 @@ import AdminMessageBar from './components/AdminMessageBar'
 import { ADMIN_PAGES } from './constants'
 import AdminOverview from './pages/AdminOverview'
 import UserManagement from './pages/UserManagement'
+import SystemConfig from './pages/SystemConfig'
 import AuditLogs from './pages/AuditLogs'
 
 const PAGE_NAME = {
@@ -13,13 +14,6 @@ const PAGE_NAME = {
   [ADMIN_PAGES.SYSTEM_CONFIG]: 'System Config',
   [ADMIN_PAGES.AUDIT_LOGS]: 'Audit Logs'
 }
-
-const PlaceholderPage = ({ title, description }) => (
-  <section style={{ padding: '24px 28px' }}>
-    <h2>{title}</h2>
-    <p style={{ color: '#667085', marginTop: 8 }}>{description}</p>
-  </section>
-)
 
 const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
   const [currentPage, setCurrentPage] = useState(ADMIN_PAGES.OVERVIEW)
@@ -40,12 +34,7 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
       case ADMIN_PAGES.USER_MANAGE:
         return <UserManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.SYSTEM_CONFIG:
-        return (
-          <PlaceholderPage
-            title="System Config"
-            description="System config page is ready for the R2 config panel integration."
-          />
-        )
+        return <SystemConfig currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.AUDIT_LOGS:
         return (
           <AuditLogs currentUserId={currentUserId} onNotify={notify} />
