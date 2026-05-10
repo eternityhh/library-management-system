@@ -1,306 +1,378 @@
-import { useState, useCallback } from 'react';
-import useAuditLogs from '../hooks/useAuditLogs';
-
-// ======================== 常量（中文映射） ========================
+import { useState, useCallback } from 'react'
+import useAuditLogs from '../hooks/useAuditLogs'
 
 const ACTION_LABELS = {
-    'ADMIN_UPDATE_BORROW_RULES': '更新借阅规则',
-    'ADMIN_UPDATE_FINE_RATE': '更新罚金费率',
-    'ADMIN_CREATE_LIBRARIAN': '创建馆员',
-    'ADMIN_UPDATE_LIBRARIAN': '编辑馆员',
-    'ADMIN_DELETE_LIBRARIAN': '删除馆员',
-    'ADMIN_UPDATE_USER_ROLE': '修改用户角色',
-    'ADMIN_RESET_PASSWORD': '重置密码',
-};
+  ADMIN_UPDATE_BORROW_RULES: 'Update Borrow Rules',
+  ADMIN_UPDATE_FINE_RATE: 'Update Fine Rate',
+  ADMIN_CREATE_LIBRARIAN: 'Create Librarian',
+  ADMIN_UPDATE_LIBRARIAN: 'Update Librarian',
+  ADMIN_DELETE_LIBRARIAN: 'Delete Librarian',
+  ADMIN_UPDATE_USER_ROLE: 'Update User Role',
+  ADMIN_RESET_PASSWORD: 'Reset Password'
+}
 
 const ENTITY_LABELS = {
-    'Config': '系统配置',
-    'User': '用户',
-    'Loan': '借阅',
-};
+  Config: 'System Config',
+  User: 'User',
+  Loan: 'Loan',
+  Book: 'Book'
+}
 
-const ACTION_OPTIONS = Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }));
-const ENTITY_OPTIONS = Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }));
+const ACTION_OPTIONS = Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))
+const ENTITY_OPTIONS = Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }))
 
-const getActionLabel = (action) => ACTION_LABELS[action] || action || '未知操作';
-const getEntityLabel = (entity) => ENTITY_LABELS[entity] || entity || '—';
+const getActionLabel = (action) => ACTION_LABELS[action] || action || 'Unknown Action'
+const getEntityLabel = (entity) => ENTITY_LABELS[entity] || entity || '—'
 
 const formatDateTime = (dateStr) => {
-    if (!dateStr) return '—';
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)) return dateStr;
-    try {
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        const pad = (n) => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-            `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    } catch { return dateStr; }
-};
+  if (!dateStr) return '—'
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)) return dateStr
+  try {
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return dateStr
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  } catch {
+    return dateStr
+  }
+}
 
-const truncateText = (text, max = 50) => {
-    if (!text) return '';
-    return text.length > max ? text.slice(0, max) + '…' : text;
-};
+const truncateText = (text, max = 56) => {
+  if (!text) return ''
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
 
-const formatJsonForDisplay = (str) => {
-    if (!str) return '(无详情)';
-    try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str; }
-};
+const parseDetail = (detail) => {
+  if (!detail) return null
+  if (typeof detail !== 'string') return detail
+  try {
+    return JSON.parse(detail)
+  } catch {
+    return detail
+  }
+}
 
-// ======================== 详情弹窗（使用项目统一 Modal 类名） ========================
+const toReadableKey = (key) =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+
+const normalizeValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    if (!value.length) return '[]'
+    return value
+      .map((item) => (typeof item === 'object' ? JSON.stringify(item) : String(item)))
+      .join(', ')
+  }
+  return JSON.stringify(value)
+}
+
+const flattenDetail = (value, prefix = '') => {
+  if (value === null || value === undefined) {
+    return prefix ? [{ key: prefix, value: '—' }] : []
+  }
+
+  if (Array.isArray(value) || typeof value !== 'object') {
+    return prefix ? [{ key: prefix, value: normalizeValue(value) }] : [{ key: 'Detail', value: normalizeValue(value) }]
+  }
+
+  return Object.entries(value).flatMap(([key, nested]) => {
+    const nextKey = prefix ? `${prefix}.${key}` : key
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      return flattenDetail(nested, nextKey)
+    }
+    return [{ key: nextKey, value: normalizeValue(nested) }]
+  })
+}
+
+const buildPreviewItems = (detail) => {
+  const parsed = parseDetail(detail)
+  if (!parsed) return []
+  if (typeof parsed === 'string') return [truncateText(parsed, 90)]
+
+  const entries = flattenDetail(parsed).slice(0, 3)
+  return entries.map((entry) => `${toReadableKey(entry.key)}: ${truncateText(entry.value, 28)}`)
+}
 
 const DetailModal = ({ log, onClose }) => {
-    if (!log) return null;
+  if (!log) return null
 
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h3>📄 操作日志详情</h3>
-                    <button className="modal-close" onClick={onClose}>×</button>
-                </div>
-                <div className="modal-body">
-                    <table className="detail-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <tbody>
-                        <tr>
-                            <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right', width: 80 }}>日志ID</td>
-                            <td style={{ padding: '6px 12px' }}><code>{log.id || '—'}</code></td>
-                        </tr>
-                        <tr>
-                            <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right' }}>操作者</td>
-                            <td style={{ padding: '6px 12px' }}>
-                                {log.operator ? (
-                                    <>{log.operator.name} <span style={{ color: '#999', marginLeft: 8, fontSize: 13 }}>{log.operator.email}</span></>
-                                ) : (
-                                    <span style={{ color: '#999', fontStyle: 'italic' }}>系统 / 已删除</span>
-                                )}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right' }}>操作类型</td>
-                            <td style={{ padding: '6px 12px' }}>
-                                {getActionLabel(log.action)}
-                                <code style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>{log.action}</code>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right' }}>操作实体</td>
-                            <td style={{ padding: '6px 12px' }}>{getEntityLabel(log.entity)}</td>
-                        </tr>
-                        {log.entityId && (
-                            <tr>
-                                <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right' }}>实体ID</td>
-                                <td style={{ padding: '6px 12px' }}><code>{log.entityId}</code></td>
-                            </tr>
-                        )}
-                        <tr>
-                            <td style={{ fontWeight: 600, color: '#666', padding: '6px 12px', textAlign: 'right' }}>操作时间</td>
-                            <td style={{ padding: '6px 12px' }}>{formatDateTime(log.createdAt)}</td>
-                        </tr>
-                        </tbody>
-                    </table>
+  const detailParsed = parseDetail(log.detail)
+  const detailRows = typeof detailParsed === 'string'
+    ? [{ key: 'Detail', value: detailParsed }]
+    : flattenDetail(detailParsed)
 
-                    <div style={{ marginTop: 20 }}>
-                        <h4 style={{ fontSize: 14, color: '#555', marginBottom: 8 }}>📝 详情数据</h4>
-                        <pre style={{
-                            background: '#1e293b', color: '#e2e8f0', borderRadius: 8, padding: 16,
-                            fontSize: 13, overflowX: 'auto', whiteSpace: 'pre-wrap',
-                            maxHeight: 300, overflowY: 'auto', lineHeight: 1.5
-                        }}>
-              {formatJsonForDisplay(log.detail)}
-            </pre>
-                    </div>
-                </div>
-                <div className="modal-footer">
-                    <button className="btn-secondary" onClick={onClose}>关闭</button>
-                </div>
-            </div>
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content audit-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header audit-modal-header">
+          <h3>Audit Log Details</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-    );
-};
 
-// ======================== 主组件 ========================
-
-const AuditLogs = ({ currentUserId, onNotify }) => {
-    const { query, data, loading, error, setQueryPart, reload } = useAuditLogs();
-    const [selectedLog, setSelectedLog] = useState(null);
-    const [detailOpen, setDetailOpen] = useState(false);
-
-    const totalPages = Math.max(1, Math.ceil(data.total / data.size));
-
-    const handleOpenDetail = useCallback((log) => {
-        setSelectedLog(log);
-        setDetailOpen(true);
-    }, []);
-
-    const handleCloseDetail = useCallback(() => {
-        setDetailOpen(false);
-        setTimeout(() => setSelectedLog(null), 200);
-    }, []);
-
-    const handleFilterChange = useCallback((field, value) => {
-        setQueryPart({ [field]: value });
-    }, [setQueryPart]);
-
-    const handleReset = useCallback(() => {
-        setQueryPart({ operatorId: '', action: '', entity: '', from: '', to: '', page: 1 });
-    }, [setQueryPart]);
-
-    return (
-        <div className="content">
-            <div className="page-header">
-                <h2>📋 操作日志</h2>
+        <div className="modal-body audit-modal-body">
+          <div className="audit-meta-grid">
+            <div className="audit-meta-card">
+              <span className="audit-meta-label">Operator</span>
+              <span className="audit-meta-value">
+                {log.operator ? `${log.operator.name} (${log.operator.email})` : 'System / Deleted User'}
+              </span>
             </div>
-
-            {/* 筛选区域（与 UserManagement 结构一致） */}
-            <div className="search-section">
-                <div className="search-form" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 10 }}>
-                    <div className="search-field" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <label className="search-label">操作者ID</label>
-                        <input
-                            className="search-input"
-                            placeholder="输入ID"
-                            value={query.operatorId}
-                            onChange={(e) => handleFilterChange('operatorId', e.target.value)}
-                        />
-                    </div>
-                    <div className="search-field" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <label className="search-label">操作类型</label>
-                        <select
-                            className="search-select"
-                            value={query.action}
-                            onChange={(e) => handleFilterChange('action', e.target.value)}
-                        >
-                            <option value="">全部操作</option>
-                            {ACTION_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="search-field" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <label className="search-label">实体</label>
-                        <select
-                            className="search-select"
-                            value={query.entity}
-                            onChange={(e) => handleFilterChange('entity', e.target.value)}
-                        >
-                            <option value="">全部实体</option>
-                            {ENTITY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                    </div>
-                    <div className="search-field" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <label className="search-label">开始时间</label>
-                        <input
-                            type="date"
-                            className="search-input"
-                            value={query.from ? query.from.slice(0, 10) : ''}
-                            onChange={(e) => handleFilterChange('from', e.target.value ? `${e.target.value} 00:00:00` : '')}
-                        />
-                    </div>
-                    <div className="search-field" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <label className="search-label">结束时间</label>
-                        <input
-                            type="date"
-                            className="search-input"
-                            value={query.to ? query.to.slice(0, 10) : ''}
-                            onChange={(e) => handleFilterChange('to', e.target.value ? `${e.target.value} 23:59:59` : '')}
-                        />
-                    </div>
-                    <div className="search-actions" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                        <button className="search-btn" onClick={reload}>Search</button>
-                        <button className="btn-secondary" onClick={handleReset}>Reset</button>
-                    </div>
-                </div>
+            <div className="audit-meta-card">
+              <span className="audit-meta-label">Action</span>
+              <span className="audit-meta-value">
+                {getActionLabel(log.action)}
+                <code>{log.action}</code>
+              </span>
             </div>
+            <div className="audit-meta-card">
+              <span className="audit-meta-label">Entity</span>
+              <span className="audit-meta-value">{getEntityLabel(log.entity)}</span>
+            </div>
+            <div className="audit-meta-card">
+              <span className="audit-meta-label">Timestamp</span>
+              <span className="audit-meta-value">{formatDateTime(log.createdAt)}</span>
+            </div>
+            <div className="audit-meta-card audit-meta-card-wide">
+              <span className="audit-meta-label">Log ID</span>
+              <span className="audit-meta-value"><code>{log.id || '—'}</code></span>
+            </div>
+            <div className="audit-meta-card audit-meta-card-wide">
+              <span className="audit-meta-label">Entity ID</span>
+              <span className="audit-meta-value"><code>{log.entityId || '—'}</code></span>
+            </div>
+          </div>
 
-            {/* 错误提示 */}
-            {error && (
-                <div style={{ margin: '16px 0', padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>⚠️ {error}</span>
-                    <button onClick={reload} className="btn-sm" style={{ background: '#fff' }}>重试</button>
-                </div>
+          <div className="audit-detail-section">
+            <h4>Detail Breakdown</h4>
+            {detailRows.length ? (
+              <div className="audit-detail-list">
+                {detailRows.map((item, index) => (
+                  <div key={`${item.key}-${index}`} className="audit-detail-row">
+                    <span className="audit-detail-key">{toReadableKey(item.key)}</span>
+                    <span className="audit-detail-value">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="audit-empty-detail">No detail payload provided.</div>
             )}
+          </div>
+        </div>
 
-            {/* 表格区域 */}
-            <div className="table-section">
-                <h3>操作日志列表</h3>
-                {loading ? (
-                    <div className="loading">Loading...</div>
-                ) : (
-                    <>
-                        <table className="data-table">
-                            <thead>
-                            <tr>
-                                <th>操作者</th>
-                                <th>操作类型</th>
-                                <th>实体</th>
-                                <th>实体ID</th>
-                                <th>详情预览</th>
-                                <th>操作时间</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {data.list.map((log) => (
-                                <tr key={log.id} onClick={() => handleOpenDetail(log)} style={{ cursor: 'pointer' }}>
-                                    <td>
-                                        {log.operator ? (
-                                            <div>
-                                                <div style={{ fontWeight: 600 }}>{log.operator.name}</div>
-                                                <div style={{ fontSize: 12, color: '#888' }}>{log.operator.email}</div>
-                                            </div>
-                                        ) : (
-                                            <span style={{ color: '#999', fontStyle: 'italic' }}>系统 / 已删除</span>
-                                        )}
-                                    </td>
-                                    <td>{getActionLabel(log.action)}</td>
-                                    <td>{getEntityLabel(log.entity)}</td>
-                                    <td>{log.entityId ? <code>{truncateText(log.entityId, 18)}</code> : '—'}</td>
-                                    <td style={{ maxWidth: 180, fontSize: 12, color: '#888' }}>
-                                        {log.detail ? truncateText(log.detail, 40) : '—'}
-                                    </td>
-                                    <td>{formatDateTime(log.createdAt)}</td>
-                                </tr>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const AuditLogs = () => {
+  const { query, data, loading, error, setQueryPart, reload } = useAuditLogs()
+  const [selectedLog, setSelectedLog] = useState(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  const totalPages = Math.max(1, Math.ceil(data.total / data.size))
+
+  const handleOpenDetail = useCallback((log) => {
+    setSelectedLog(log)
+    setDetailOpen(true)
+  }, [])
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailOpen(false)
+    setTimeout(() => setSelectedLog(null), 200)
+  }, [])
+
+  const handleFilterChange = useCallback((field, value) => {
+    setQueryPart({ [field]: value })
+  }, [setQueryPart])
+
+  const handleReset = useCallback(() => {
+    setQueryPart({ operatorId: '', action: '', entity: '', from: '', to: '', page: 1 })
+  }, [setQueryPart])
+
+  return (
+    <div className="content audit-logs-page">
+      <div className="page-header audit-page-header">
+        <h2>Audit Logs</h2>
+        <p className="audit-subtitle">
+          Review admin operations with readable summaries and rich detail breakdown.
+        </p>
+      </div>
+
+      <div className="search-section audit-filter-panel">
+        <div className="search-form audit-search-form">
+          <div className="search-field audit-field">
+            <label className="search-label">Operator ID</label>
+            <input
+              className="search-input"
+              placeholder="Enter operator id"
+              value={query.operatorId}
+              onChange={(e) => handleFilterChange('operatorId', e.target.value)}
+            />
+          </div>
+
+          <div className="search-field audit-field">
+            <label className="search-label">Action</label>
+            <select
+              className="search-select"
+              value={query.action}
+              onChange={(e) => handleFilterChange('action', e.target.value)}
+            >
+              <option value="">All actions</option>
+              {ACTION_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+
+          <div className="search-field audit-field">
+            <label className="search-label">Entity</label>
+            <select
+              className="search-select"
+              value={query.entity}
+              onChange={(e) => handleFilterChange('entity', e.target.value)}
+            >
+              <option value="">All entities</option>
+              {ENTITY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+
+          <div className="search-field audit-field">
+            <label className="search-label">From</label>
+            <input
+              type="date"
+              className="search-input"
+              value={query.from ? query.from.slice(0, 10) : ''}
+              onChange={(e) => handleFilterChange('from', e.target.value ? `${e.target.value} 00:00:00` : '')}
+            />
+          </div>
+
+          <div className="search-field audit-field">
+            <label className="search-label">To</label>
+            <input
+              type="date"
+              className="search-input"
+              value={query.to ? query.to.slice(0, 10) : ''}
+              onChange={(e) => handleFilterChange('to', e.target.value ? `${e.target.value} 23:59:59` : '')}
+            />
+          </div>
+
+          <div className="search-actions audit-search-actions">
+            <button className="search-btn" onClick={reload}>Apply Filters</button>
+            <button className="btn-secondary" onClick={handleReset}>Reset</button>
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="audit-error-banner">
+          <span>{error || 'Failed to load audit logs.'}</span>
+          <button onClick={reload} className="btn-sm audit-retry-btn">Retry</button>
+        </div>
+      )}
+
+      <div className="table-section audit-table-panel">
+        <h3>Operation Timeline</h3>
+        {loading ? (
+          <div className="loading">Loading audit logs...</div>
+        ) : (
+          <>
+            <table className="data-table audit-data-table">
+              <thead>
+                <tr>
+                  <th>Operator</th>
+                  <th>Action</th>
+                  <th>Entity</th>
+                  <th>Entity ID</th>
+                  <th>Detail Preview</th>
+                  <th>Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.list.map((log) => {
+                  const previewItems = buildPreviewItems(log.detail)
+                  return (
+                    <tr key={log.id} onClick={() => handleOpenDetail(log)} className="audit-row">
+                      <td>
+                        {log.operator ? (
+                          <div className="audit-operator">
+                            <div>{log.operator.name}</div>
+                            <div className="audit-operator-email">{log.operator.email}</div>
+                          </div>
+                        ) : (
+                          <span className="audit-muted">System / Deleted user</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="audit-action-badge">{getActionLabel(log.action)}</span>
+                      </td>
+                      <td>{getEntityLabel(log.entity)}</td>
+                      <td>{log.entityId ? <code>{truncateText(log.entityId, 18)}</code> : '—'}</td>
+                      <td>
+                        {previewItems.length ? (
+                          <div className="audit-preview-list">
+                            {previewItems.map((item) => (
+                              <span key={item} className="audit-preview-pill">{item}</span>
                             ))}
-                            </tbody>
-                        </table>
-                        {data.list.length === 0 && <div className="no-data">暂无操作日志</div>}
+                          </div>
+                        ) : (
+                          <span className="audit-muted">No detail</span>
+                        )}
+                      </td>
+                      <td>{formatDateTime(log.createdAt)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
 
-                        <div className="form-actions" style={{ justifyContent: 'space-between', marginTop: 18 }}>
-              <span style={{ color: '#718096', fontSize: 13 }}>
+            {data.list.length === 0 && <div className="no-data">No audit logs found.</div>}
+
+            <div className="form-actions audit-pagination">
+              <span className="audit-pagination-summary">
                 Total {data.total} records · Page {data.page}/{totalPages}
-                  <select
-                      value={data.size}
-                      onChange={(e) => setQueryPart({ size: Number(e.target.value), page: 1 })}
-                      className="search-select"
-                      style={{ marginLeft: 12, width: 'auto' }}
-                  >
-                  {[5, 10, 20, 50].map(s => <option key={s} value={s}>{s} 条/页</option>)}
+                <select
+                  value={data.size}
+                  onChange={(e) => setQueryPart({ size: Number(e.target.value), page: 1 })}
+                  className="search-select"
+                >
+                  {[5, 10, 20, 50].map((size) => <option key={size} value={size}>{size} rows / page</option>)}
                 </select>
               </span>
-                            <div style={{ display: 'flex', gap: 10 }}>
-                                <button
-                                    className="btn-secondary"
-                                    onClick={() => setQueryPart({ page: query.page - 1 })}
-                                    disabled={query.page <= 1}
-                                >
-                                    Previous
-                                </button>
-                                <button
-                                    className="btn-secondary"
-                                    onClick={() => setQueryPart({ page: query.page + 1 })}
-                                    disabled={query.page >= totalPages}
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        </div>
-                    </>
-                )}
+              <div className="audit-pagination-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setQueryPart({ page: query.page - 1 })}
+                  disabled={query.page <= 1}
+                >
+                  Previous
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setQueryPart({ page: query.page + 1 })}
+                  disabled={query.page >= totalPages}
+                >
+                  Next
+                </button>
+              </div>
             </div>
+          </>
+        )}
+      </div>
 
-            {detailOpen && selectedLog && (
-                <DetailModal log={selectedLog} onClose={handleCloseDetail} />
-            )}
-        </div>
-    );
-};
+      {detailOpen && selectedLog && (
+        <DetailModal log={selectedLog} onClose={handleCloseDetail} />
+      )}
+    </div>
+  )
+}
 
-export default AuditLogs;
+export default AuditLogs
