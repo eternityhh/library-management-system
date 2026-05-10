@@ -2,6 +2,7 @@ const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { getLoanPolicy } = require("../config/loanPolicy");
 const { formatDateTime, addDays, overdueWholeDays } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 
 async function computeOverdueFineAmount(loan, returnDate) {
   const { fineRate } = await getLoanPolicy();
@@ -392,17 +393,9 @@ async function payFine(userId, loanId, payload) {
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId,
-        action: "PAY_FINE",
-        entity: "Loan",
-        entityId: loanId,
-        detail: JSON.stringify({
-          amount: fineAmount,
-          method: "SIMULATED",
-        }),
-      },
+    await auditLogService.recordWithClient(tx, userId, "PAY_FINE", "Loan", loanId, {
+      amount: fineAmount,
+      method: "SIMULATED",
     });
 
     return {

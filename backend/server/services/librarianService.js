@@ -1,6 +1,7 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { formatDateTime } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 
 // Valid genre and language values from Prisma schema
 const VALID_GENRES = ["Technology", "Fiction", "Science", "History", "Management"];
@@ -52,14 +53,9 @@ async function addBook(payload, userId) {
   });
 
   // Log the action
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: "CREATE_BOOK",
-      entity: "Book",
-      entityId: book.id,
-      detail: `Created book: ${book.title}`,
-    },
+  await auditLogService.record(userId, "CREATE_BOOK", "Book", book.id, {
+    title: book.title,
+    isbn: book.isbn,
   });
 
   return toBookDetail(book);
@@ -121,14 +117,9 @@ async function editBook(bookId, payload, userId) {
   });
 
   // Log the action
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: "UPDATE_BOOK",
-      entity: "Book",
-      entityId: bookId,
-      detail: `Updated book: ${updatedBook.title}`,
-    },
+  await auditLogService.record(userId, "UPDATE_BOOK", "Book", bookId, {
+    title: updatedBook.title,
+    isbn: updatedBook.isbn,
   });
 
   return toBookDetail(updatedBook);
@@ -218,14 +209,9 @@ async function deleteBook(bookId, userId) {
   });
 
   // Log the action
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: "DELETE_BOOK",
-      entity: "Book",
-      entityId: bookId,
-      detail: `Deleted book: ${existingBook.title}`,
-    },
+  await auditLogService.record(userId, "DELETE_BOOK", "Book", bookId, {
+    title: existingBook.title,
+    isbn: existingBook.isbn,
   });
 
   return null;

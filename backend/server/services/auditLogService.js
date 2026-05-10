@@ -59,22 +59,46 @@ const toAuditLogDTO = (auditLog) => {
     };
 };
 
-async function record(operatorId, action, entity, entityId = null, detailObj = null) {
-    try {
-        const detail = detailObj ? JSON.stringify(detailObj) : null;
-
-        await prisma.auditLog.create({
-            data: {
-                userId: operatorId,
-                action,
-                entity,
-                entityId,
-                detail
-            }
-        });
-    } catch (error) {
-        console.error("记录审计日志失败:", error);
+function normalizeNullableString(value) {
+    if (value === null || value === undefined || value === "") {
+        return null;
     }
+    return String(value);
+}
+
+function normalizeDetail(detail) {
+    if (detail === null || detail === undefined || detail === "") {
+        return null;
+    }
+    return typeof detail === "string" ? detail : JSON.stringify(detail);
+}
+
+function buildAuditLogData(operatorId, action, entity, entityId = null, detail = null) {
+    if (!action || typeof action !== "string") {
+        throw new AppError(400, "Invalid parameter");
+    }
+
+    if (!entity || typeof entity !== "string") {
+        throw new AppError(400, "Invalid parameter");
+    }
+
+    return {
+        userId: normalizeNullableString(operatorId),
+        action: action.trim(),
+        entity: entity.trim(),
+        entityId: normalizeNullableString(entityId),
+        detail: normalizeDetail(detail)
+    };
+}
+
+async function recordWithClient(client, operatorId, action, entity, entityId = null, detail = null) {
+    await client.auditLog.create({
+        data: buildAuditLogData(operatorId, action, entity, entityId, detail)
+    });
+}
+
+async function record(operatorId, action, entity, entityId = null, detail = null) {
+    await recordWithClient(prisma, operatorId, action, entity, entityId, detail);
 }
 
 async function list(query) {
@@ -116,5 +140,6 @@ async function list(query) {
 
 module.exports = {
     record,
+    recordWithClient,
     list
 };

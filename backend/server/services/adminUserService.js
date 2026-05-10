@@ -236,15 +236,14 @@ async function deleteLibrarian(operatorId, librarianId) {
       where: { id: librarianId },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId: operatorId,
-        action: "ADMIN_DELETE_LIBRARIAN",
-        entity: "User",
-        entityId: librarianId,
-        detail: JSON.stringify(detail),
-      },
-    });
+    await auditLogService.recordWithClient(
+      tx,
+      operatorId,
+      "ADMIN_DELETE_LIBRARIAN",
+      "User",
+      librarianId,
+      detail
+    );
   });
 
   return null;
@@ -256,7 +255,7 @@ async function listUsers(query) {
   const role = typeof query?.role === "string" ? query.role.trim() : "";
 
   if (role && !ALLOWED_ROLES.includes(role)) {
-    throw new AppError(400, "参数错误");
+    throw new AppError(400, "Invalid parameter");
   }
 
   const where = {
