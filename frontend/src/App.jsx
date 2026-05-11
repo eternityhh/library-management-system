@@ -142,6 +142,10 @@ function App() {
               <span className="icon">⏳</span>
               <span>My Holds</span>
             </div>
+            <div className={`menu-item ${currentPage === 'return' ? 'active' : ''}`} onClick={() => setCurrentPage('return')}>
+              <span className="icon">↩️</span>
+              <span>Return Book</span>
+            </div>
             <div className={`menu-item ${currentPage === 'wishlist' ? 'active' : ''}`} onClick={() => setCurrentPage('wishlist')}>
               <span className="icon">❤️</span>
               <span>Wishlist</span>
@@ -300,6 +304,7 @@ function getPageName(page) {
     'holds': 'My Holds',
     'wishlist': 'Wishlist',
     'fines': 'Pay Fines',
+    'return': 'Return Book',
     'profile': 'My Profile',
     'manage': 'Manage Books',
     'loans-manage': 'Loan Management',

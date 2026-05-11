@@ -42,6 +42,7 @@ function toCurrentLoan(loan) {
     bookId: loan.bookId,
     bookTitle: loan.book.title,
     bookAuthor: loan.book.author,
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     renewalCount: loan.renewalCount || 0,
@@ -59,6 +60,7 @@ function toHistoryLoan(loan) {
     bookId: loan.book?.id || loan.bookId || null,
     bookTitle: loan.book?.title || "This book is no longer available",
     bookAuthor: loan.book?.author || "-",
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     returnDate: loan.returnDate ? formatDateTime(loan.returnDate) : null,
@@ -190,11 +192,16 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
   const dueDate = addDays(checkoutDate, maxDays);
   const nextAvailableCopies = book.availableCopies - 1;
 
+  const availableCopy = await prisma.bookCopy.findFirst({
+    where: { bookId: book.id, available: true },
+  });
+
   const loan = await prisma.$transaction(async (tx) => {
     const createdLoan = await tx.loan.create({
       data: {
         userId,
         bookId: book.id,
+        bookCopyId: availableCopy?.id || null,
         checkoutDate,
         dueDate,
         renewalCount: 0,
@@ -203,8 +210,16 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
       include: {
         book: true,
         user: true,
+        bookCopy: true,
       },
     });
+
+    if (availableCopy) {
+      await tx.bookCopy.update({
+        where: { id: availableCopy.id },
+        data: { available: false },
+      });
+    }
 
     await tx.book.update({
       where: { id: book.id },
@@ -255,6 +270,13 @@ async function finalizeLoanReturn(loan, actorUserId, action, detail) {
       },
     });
 
+    if (loan.bookCopyId) {
+      await tx.bookCopy.update({
+        where: { id: loan.bookCopyId },
+        data: { available: true },
+      });
+    }
+
     await tx.book.update({
       where: { id: loan.bookId },
       data: {
@@ -296,6 +318,7 @@ async function getCurrentLoans(userId) {
     },
     include: {
       book: true,
+      bookCopy: true,
     },
     orderBy: {
       dueDate: "asc",
@@ -311,7 +334,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
   await syncOverdueLoansForUser(userId);
 
   const skip = (page - 1) * size;
-  
+
   const [loans, totalCount] = await Promise.all([
     prisma.loan.findMany({
       where: {
@@ -319,6 +342,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
       },
       include: {
         book: true,
+        bookCopy: true,
       },
       orderBy: {
         checkoutDate: "desc",
@@ -387,6 +411,7 @@ async function createLoan(userId, payload) {
     loanId: loan.id,
     bookId: loan.bookId,
     bookTitle: loan.book.title,
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     availableCopies: nextAvailableCopies,
@@ -502,6 +527,7 @@ async function returnLoan(userId, loanId) {
     include: {
       book: true,
       user: true,
+      bookCopy: true,
     },
   });
 
@@ -519,6 +545,7 @@ async function returnLoan(userId, loanId) {
 
   const now = new Date();
   const fineAmount = await computeOverdueFineAmount(loan, now);
+  let nextAvailableCopies;
 
   const updatedLoan = await prisma.$transaction(async (tx) => {
     const returnedLoan = await tx.loan.update({
@@ -531,10 +558,18 @@ async function returnLoan(userId, loanId) {
       },
       include: {
         book: true,
+        bookCopy: true,
       },
     });
 
-    const nextAvailableCopies = returnedLoan.book.availableCopies + 1;
+    if (returnedLoan.bookCopyId) {
+      await tx.bookCopy.update({
+        where: { id: returnedLoan.bookCopyId },
+        data: { available: true },
+      });
+    }
+
+    nextAvailableCopies = returnedLoan.book.availableCopies + 1;
 
     await tx.book.update({
       where: { id: returnedLoan.bookId },
@@ -551,6 +586,7 @@ async function returnLoan(userId, loanId) {
     id: updatedLoan.id,
     bookId: updatedLoan.bookId,
     bookTitle: updatedLoan.book.title,
+    barcode: updatedLoan.bookCopy?.barcode || null,
     returnDate: formatDateTime(updatedLoan.returnDate),
     status: updatedLoan.status,
     fineAmount: Number(updatedLoan.fineAmount),
@@ -570,6 +606,7 @@ async function librarianReturnLoan(payload, actorUserId) {
     include: {
       book: true,
       user: true,
+      bookCopy: true,
     },
   });
 
@@ -592,6 +629,7 @@ async function librarianReturnLoan(payload, actorUserId) {
     JSON.stringify({
       borrowerId: loan.userId,
       bookId: loan.bookId,
+      bookCopyId: loan.bookCopyId,
     }),
   );
 
@@ -606,6 +644,38 @@ async function librarianReturnLoan(payload, actorUserId) {
     fineAmount: Number(updatedLoan.fineAmount),
     availableCopies: nextAvailableCopies,
   };
+}
+
+async function returnLoanByBarcode(userId, barcode) {
+  if (!barcode || typeof barcode !== "string" || !barcode.trim()) {
+    throw new AppError(400, "Barcode is required");
+  }
+
+  const normalizedBarcode = barcode.trim();
+
+  const bookCopy = await prisma.bookCopy.findUnique({
+    where: { barcode: normalizedBarcode },
+    include: { book: true },
+  });
+
+  if (!bookCopy) {
+    throw new AppError(404, "No book copy found with this barcode");
+  }
+
+  const activeLoan = await prisma.loan.findFirst({
+    where: {
+      userId,
+      bookCopyId: bookCopy.id,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+    orderBy: { checkoutDate: "desc" },
+  });
+
+  if (!activeLoan) {
+    throw new AppError(404, "No active loan found for this book copy. You may not have borrowed this copy, or it has already been returned.");
+  }
+
+  return returnLoan(userId, activeLoan.id);
 }
 
 async function payFine(userId, loanId, payload) {
@@ -661,5 +731,6 @@ module.exports = {
   renewLoan,
   returnLoan,
   librarianReturnLoan,
+  returnLoanByBarcode,
   payFine,
 };

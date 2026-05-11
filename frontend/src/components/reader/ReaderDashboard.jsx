@@ -53,6 +53,11 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   // 罚款支付状态
   const [payFineLoading, setPayFineLoading] = useState(false)
 
+  // 还书状态
+  const [returnBarcode, setReturnBarcode] = useState('')
+  const [returnBarcodeLoading, setReturnBarcodeLoading] = useState(false)
+  const [returnResult, setReturnResult] = useState(null)
+
   // 个人中心状态
   const [profile, setProfile] = useState(null)
   const [editMode, setEditMode] = useState(false)
@@ -319,6 +324,47 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       showMessage('error', 'Network error: ' + err.message)
     }
     setReturnLoading(false)
+  }
+
+  // Return book by barcode
+  const handleReturnByBarcode = async (e) => {
+    e.preventDefault()
+    if (!returnBarcode.trim()) {
+      showMessage('error', 'Please enter a barcode')
+      return
+    }
+    setReturnBarcodeLoading(true)
+    setReturnResult(null)
+    const token = localStorage.getItem('token')
+    try {
+      const res = await fetch(`${API_BASE}/loans/return-by-barcode`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ barcode: returnBarcode.trim() })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setReturnResult({
+          success: true,
+          bookTitle: data.data.bookTitle,
+          returnDate: data.data.returnDate,
+          fineAmount: data.data.fineAmount
+        })
+        setReturnBarcode('')
+        showMessage('success', `Book returned successfully!${data.data.fineAmount > 0 ? ` Fine: $${data.data.fineAmount}` : ''}`)
+        onRefreshStats && onRefreshStats()
+      } else {
+        setReturnResult({ success: false, message: data.message || 'Return failed' })
+        showMessage('error', data.message || 'Return failed')
+      }
+    } catch (err) {
+      setReturnResult({ success: false, message: 'Network error: ' + err.message })
+      showMessage('error', 'Network error: ' + err.message)
+    }
+    setReturnBarcodeLoading(false)
   }
 
   // Fetch holds
@@ -920,6 +966,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
               <tr>
                 <th>Title</th>
                 <th>Author</th>
+                <th>Barcode</th>
                 <th>Checkout Date</th>
                 <th>Due Date</th>
                 <th>Return Date</th>
@@ -931,23 +978,24 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
             <tbody>
               {loanHistoryLoading ? (
                 <tr>
-                  <td colSpan="8" className="no-data">Loading...</td>
+                  <td colSpan="9" className="no-data">Loading...</td>
                 </tr>
               ) : loanHistory.length > 0 ? (
                 loanHistory.map((loan) => (
                   <tr key={loan.id}>
                     <td>{loan.bookTitle || 'Book unavailable'}</td>
                     <td>{loan.bookAuthor || 'N/A'}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '13px' }}>{loan.barcode || 'N/A'}</td>
                     <td>{new Date(loan.checkoutDate).toLocaleDateString('en-US')}</td>
                     <td>{new Date(loan.dueDate).toLocaleDateString('en-US')}</td>
                     <td>{loan.returnDate ? new Date(loan.returnDate).toLocaleDateString('en-US') : '-'}</td>
                     <td>{loan.renewalCount || 0}</td>
                     <td>
                       <span className={`status-badge ${
-                        loan.status === 'Borrowing' ? 'success' : 
+                        loan.status === 'Borrowing' ? 'success' :
                         loan.status === 'Overdue' ? 'danger' : 'info'
                       }`}>
-                        {loan.status === 'Borrowing' ? 'Borrowing' : 
+                        {loan.status === 'Borrowing' ? 'Borrowing' :
                          loan.status === 'Overdue' ? 'Overdue' : 'Returned'}
                       </span>
                     </td>
@@ -976,7 +1024,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="no-data">No loan records</td>
+                  <td colSpan="9" className="no-data">No loan records</td>
                 </tr>
               )}
             </tbody>
@@ -1355,6 +1403,98 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     )
   }
 
+  // Render Return Book page
+  const renderReturnBook = () => {
+    return (
+      <div className="content">
+        <div className="page-header">
+          <h2>Return Book</h2>
+          <p>Scan or enter the book copy barcode to return a book</p>
+        </div>
+
+        <div className="return-book-container" style={{ maxWidth: '600px', margin: '0 auto' }}>
+          <form onSubmit={handleReturnByBarcode} className="search-form">
+            <div className="search-input-group">
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Enter book copy barcode..."
+                value={returnBarcode}
+                onChange={(e) => { setReturnBarcode(e.target.value); setReturnResult(null) }}
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="search-btn"
+                disabled={returnBarcodeLoading}
+              >
+                {returnBarcodeLoading ? 'Processing...' : 'Return'}
+              </button>
+            </div>
+          </form>
+
+          {returnResult && returnResult.success && (
+            <div className="result-card success" style={{
+              marginTop: '24px',
+              padding: '20px',
+              borderRadius: '8px',
+              backgroundColor: '#f0fff4',
+              border: '1px solid #c6f6d5'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#22543d', marginBottom: '12px' }}>
+                Book Returned Successfully
+              </div>
+              <div style={{ color: '#276749' }}>
+                <p><strong>Title:</strong> {returnResult.bookTitle}</p>
+                <p><strong>Return Date:</strong> {returnResult.returnDate}</p>
+                {returnResult.fineAmount > 0 && (
+                  <p style={{ color: '#c05621', fontWeight: '600' }}>
+                    Overdue Fine: ${returnResult.fineAmount}
+                  </p>
+                )}
+                {returnResult.fineAmount === 0 && (
+                  <p style={{ color: '#22543d' }}>No overdue fine</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {returnResult && !returnResult.success && (
+            <div className="result-card error" style={{
+              marginTop: '24px',
+              padding: '20px',
+              borderRadius: '8px',
+              backgroundColor: '#fff5f5',
+              border: '1px solid #fed7d7'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#9b2c2c', marginBottom: '8px' }}>
+                Return Failed
+              </div>
+              <p style={{ color: '#c53030' }}>{returnResult.message}</p>
+            </div>
+          )}
+
+          {!returnResult && (
+            <div style={{
+              marginTop: '24px',
+              padding: '20px',
+              borderRadius: '8px',
+              backgroundColor: '#f7fafc',
+              border: '1px solid #e2e8f0',
+              textAlign: 'center',
+              color: '#718096'
+            }}>
+              <p>Enter the barcode printed on the book copy to return it.</p>
+              <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                The barcode can be found on the back cover or inside the book.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   switch (currentPage) {
     case 'dashboard':
       return renderDashboard()
@@ -1364,6 +1504,8 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       return renderLoans()
     case 'holds':
       return renderHolds()
+    case 'return':
+      return renderReturnBook()
     case 'wishlist':
       return renderWishlist()
     case 'fines':

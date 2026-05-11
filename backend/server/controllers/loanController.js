@@ -73,6 +73,16 @@ async function returnLoan(req, res, next) {
   }
 }
 
+async function returnLoanByBarcode(req, res, next) {
+  try {
+    const { barcode } = req.body;
+    const data = await loanService.returnLoanByBarcode(req.currentUser.id, barcode);
+    sendSuccess(res, data, "Return successful");
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function payFine(req, res, next) {
   try {
     const { id } = req.params;
@@ -101,5 +111,6 @@ module.exports = {
   renewLoan,
   returnLoan,
   librarianReturnLoan,
+  returnLoanByBarcode,
   payFine,
 };

@@ -104,7 +104,8 @@ model BookCopy {
   available      Boolean  @default(true)
   createdAt      DateTime @default(now())
 
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  book  Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  loans Loan[]
 
   @@index([bookId])
   @@index([barcode])
@@ -114,6 +115,7 @@ model BookCopy {
 model Loan {
   id           String     @id @default(cuid())
   bookId       String
+  bookCopyId   String?
   userId       String
   checkoutDate DateTime
   dueDate      DateTime
@@ -125,10 +127,12 @@ model Loan {
   status       LoanStatus @default(Borrowing)
   createdAt    DateTime   @default(now())
 
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book     Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookCopy BookCopy? @relation(fields: [bookCopyId], references: [id], onDelete: SetNull)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([bookId])
+  @@index([bookCopyId])
   @@index([userId])
   @@index([dueDate])
 }
