@@ -130,9 +130,21 @@ function App() {
               <span className="icon">🏠</span>
               <span>Home</span>
             </div>
+            <div className={`menu-item ${currentPage === 'announcements' ? 'active' : ''}`} onClick={() => setCurrentPage('announcements')}>
+              <span className="icon">📢</span>
+              <span>Announcements</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'new-books' ? 'active' : ''}`} onClick={() => setCurrentPage('new-books')}>
+              <span className="icon">✨</span>
+              <span>New Arrivals</span>
+            </div>
             <div className={`menu-item ${currentPage === 'books' ? 'active' : ''}`} onClick={() => setCurrentPage('books')}>
               <span className="icon">📖</span>
               <span>Books</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'ranking' ? 'active' : ''}`} onClick={() => setCurrentPage('ranking')}>
+              <span className="icon">🏆</span>
+              <span>Leaderboard</span>
             </div>
             <div className={`menu-item ${currentPage === 'loans' ? 'active' : ''}`} onClick={() => setCurrentPage('loans')}>
               <span className="icon">📋</span>
@@ -153,6 +165,10 @@ function App() {
             <div className={`menu-item ${currentPage === 'fines' ? 'active' : ''}`} onClick={() => setCurrentPage('fines')}>
               <span className="icon">💰</span>
               <span>Pay Fines</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'recommend' ? 'active' : ''}`} onClick={() => setCurrentPage('recommend')}>
+              <span className="icon">💡</span>
+              <span>Recommend Book</span>
             </div>
             <div className={`menu-item ${currentPage === 'profile' ? 'active' : ''}`} onClick={() => setCurrentPage('profile')}>
               <span className="icon">👤</span>
@@ -309,7 +325,11 @@ function getPageName(page) {
     'manage': 'Manage Books',
     'loans-manage': 'Loan Management',
     'holds-manage': 'Hold Management',
-    'scanner': 'Book Scanner'
+    'scanner': 'Book Scanner',
+    'announcements': 'System Announcements',
+    'new-books': 'New Arrivals',
+    'recommend': 'Recommend Book',
+    'ranking': 'Borrowing Leaderboard'
   }
   return names[page] || 'Unknown'
 }

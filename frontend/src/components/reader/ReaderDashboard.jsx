@@ -64,6 +64,101 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   const [editForm, setEditForm] = useState({ name: '', studentId: '' })
   const [profileLoading, setProfileLoading] = useState(false)
 
+
+  // 个人仪表盘状态与请求逻辑
+  const [dashData, setDashData] = useState({
+    expiringSoon: 0,
+    overdue: 0,
+    holds: 0
+  });
+  const [dashLoading, setDashLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentPage === 'dashboard') {
+      const fetchDash = async () => {
+        setDashLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`${API_BASE}/dashboard`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.code === 200) {
+            const now = new Date();
+            const sevenDaysLater = new Date();
+            sevenDaysLater.setDate(now.getDate() + 7);
+
+            let expiring = 0;
+            let overdue = 0;
+
+            (data.data?.currentLoans || []).forEach(loan => {
+              const dueDate = new Date(loan.dueDate);
+              if (dueDate < now) {
+                overdue++;
+              } else if (dueDate <= sevenDaysLater) {
+                expiring++;
+              }
+            });
+
+            setDashData({
+              expiringSoon: expiring,
+              overdue: overdue,
+              holds: data.data?.holdsCount || 0
+            });
+          }
+        } catch (err) {
+          console.error("Dashboard fetch error:", err);
+        }
+        setDashLoading(false);
+      };
+      fetchDash();
+    }
+  }, [currentPage]);
+
+  // 公告与新书状态 (3.1 & 3.3)
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null); // 用于公告详情页
+
+  const [newBooks, setNewBooks] = useState([]);
+  const [newBooksLoading, setNewBooksLoading] = useState(false);
+
+  // 获取公告列表
+  const fetchAnnouncements = async () => {
+    setAnnouncementsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/announcements`);
+      const data = await res.json();
+      if (data.code === 200) {
+        setAnnouncements(data.data.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch announcements error:", err);
+    }
+    setAnnouncementsLoading(false);
+  };
+
+  // 获取新书通报 (1个月内上架)
+  const fetchNewBooks = async () => {
+    setNewBooksLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/books/new`);
+      const data = await res.json();
+      if (data.code === 200) {
+        setNewBooks(data.data.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch new books error:", err);
+    }
+    setNewBooksLoading(false);
+  };
+
+  // 监听页面切换，自动加载数据
+  useEffect(() => {
+    if (currentPage === 'announcements') fetchAnnouncements();
+    if (currentPage === 'new-books') fetchNewBooks();
+  }, [currentPage]);
+
   // 搜索筛选状态
   const [genreFilter, setGenreFilter] = useState('')
   const [languageFilter, setLanguageFilter] = useState('')
@@ -102,6 +197,97 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       fetchAllBooks(pagination.page, pagination.size)
     }
   }, [currentPage])
+
+
+  // 资源荐购申请 (US 3.2)
+  const [acquisitions, setAcquisitions] = useState([]);
+  const [acquisitionsLoading, setAcquisitionsLoading] = useState(false);
+  const [acqForm, setAcqForm] = useState({ title: '', author: '', isbn: '', reason: '' });
+  const [acqSubmitLoading, setAcqSubmitLoading] = useState(false);
+  const [acqStatusFilter, setAcqStatusFilter] = useState('');
+
+  // 获取荐购记录
+  const fetchAcquisitions = async (status = '') => {
+    setAcquisitionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const url = status ? `${API_BASE}/acquisition-requests?status=${status}` : `${API_BASE}/acquisition-requests`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.code === 200) {
+        setAcquisitions(data.data?.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch acquisitions error:", err);
+    }
+    setAcquisitionsLoading(false);
+  };
+
+  // 提交荐购申请
+  const handleAcqSubmit = async (e) => {
+    e.preventDefault();
+    if (!acqForm.title.trim()) {
+      showMessage('error', 'Book title is required');
+      return;
+    }
+    setAcqSubmitLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/acquisition-requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(acqForm)
+      });
+      const data = await res.json();
+      if (res.ok && data.code === 200) {
+        showMessage('success', 'Recommendation submitted successfully!');
+        setAcqForm({ title: '', author: '', isbn: '', reason: '' }); // 清空表单
+        fetchAcquisitions(acqStatusFilter); // 刷新列表
+      } else {
+        showMessage('error', data.message || 'Failed to submit recommendation');
+      }
+    } catch (err) {
+      showMessage('error', 'Network error: ' + err.message);
+    }
+    setAcqSubmitLoading(false);
+  };
+
+  // 监听页面切换自动加载数据
+  useEffect(() => {
+    if (currentPage === 'recommend') fetchAcquisitions(acqStatusFilter);
+  }, [currentPage]);
+
+  //  借阅排行榜 (3.5)
+  const [rankings, setRankings] = useState([]);
+  const [rankingsLoading, setRankingsLoading] = useState(false);
+  const [rankingPeriod, setRankingPeriod] = useState('month'); // 默认本月
+
+  // 获取排行榜数据
+  const fetchRankings = async (period = 'month') => {
+    setRankingsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      // 强行对齐产品需求，传递 month, 3months, year
+      const res = await fetch(`${API_BASE}/books/ranking?period=${period}&limit=10`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        setRankings(data.data?.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch rankings error:", err);
+    }
+    setRankingsLoading(false);
+  };
+
+  // 监听页面切换自动加载数据
+  useEffect(() => {
+    if (currentPage === 'ranking') fetchRankings(rankingPeriod);
+  }, [currentPage]);
 
   // Show message
   const showMessage = (type, text) => {
@@ -616,51 +802,57 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
   // Render Dashboard
   const renderDashboard = () => (
-    <div className="content">
-      <div className="welcome-banner">
-        <div className="welcome-text">
-          <h2>Welcome, {user.name}!</h2>
-          <p>Today is {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}</p>
+      <div className="content">
+        <div className="welcome-banner">
+          <div className="welcome-text">
+            <h2>Welcome back, {user.name}!</h2>
+            <p>Here is your account summary.</p>
+          </div>
+          <div className="banner-icon">📚</div>
         </div>
-        <div className="banner-icon">📚</div>
-      </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">📖</div>
-          <div className="stat-content">
-            <h3>{stats.totalBooks}</h3>
-            <p>Total Books</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">✅</div>
-          <div className="stat-content">
-            <h3>{stats.availableBooks}</h3>
-            <p>Available</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon orange">📋</div>
-          <div className="stat-content">
-            <h3>{stats.myLoans}</h3>
-            <p>My Loans</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">⏳</div>
-          <div className="stat-content">
-            <h3>{stats.pendingHolds}</h3>
-            <p>Pending Holds</p>
-          </div>
-        </div>
-      </div>
+        {dashLoading ? (
+            <div className="loading">Loading dashboard...</div>
+        ) : (
+            <div className="stats-grid">
+              <div className="stat-card" onClick={() => setCurrentPage('loans')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon blue">📋</div>
+                <div className="stat-content">
+                  <h3>{stats.myLoans}</h3>
+                  <p>Current Loans</p>
+                </div>
+              </div>
 
+              <div className="stat-card" onClick={() => setCurrentPage('loans')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon orange">⏳</div>
+                <div className="stat-content">
+                  <h3>{dashData.expiringSoon}</h3>
+                  <p>Expiring Soon (7 Days)</p>
+                </div>
+              </div>
 
-      <div className="table-section">
-        <h3>Recently Added Books</h3>
-        <table className="data-table">
-          <thead>
+              <div className="stat-card" onClick={() => setCurrentPage('fines')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon danger" style={{ backgroundColor: '#fee2e2', color: '#ef4444' }}>⚠️</div>
+                <div className="stat-content">
+                  <h3>{dashData.overdue}</h3>
+                  <p>Overdue Books</p>
+                </div>
+              </div>
+
+              <div className="stat-card" onClick={() => setCurrentPage('holds')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon purple">📌</div>
+                <div className="stat-content">
+                  <h3>{dashData.holds}</h3>
+                  <p>Active Holds</p>
+                </div>
+              </div>
+            </div>
+        )}
+
+        <div className="table-section" style={{ marginTop: '30px' }}>
+          <h3>Recently Added Books</h3>
+          <table className="data-table">
+            <thead>
             <tr>
               <th>Title</th>
               <th>Author</th>
@@ -668,26 +860,26 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
               <th>Genre</th>
               <th>Status</th>
             </tr>
-          </thead>
-          <tbody>
+            </thead>
+            <tbody>
             {books.slice(0, 5).map((book) => (
-              <tr key={book.id}>
-                <td>{book.title}</td>
-                <td>{book.author}</td>
-                <td>{book.isbn}</td>
-                <td>{book.genre}</td>
-                <td>
+                <tr key={book.id}>
+                  <td>{book.title}</td>
+                  <td>{book.author}</td>
+                  <td>{book.isbn}</td>
+                  <td>{book.genre}</td>
+                  <td>
                   <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
                     {book.available ? 'Available' : 'Borrowed'}
                   </span>
-                </td>
-              </tr>
+                  </td>
+                </tr>
             ))}
-          </tbody>
-        </table>
-        {books.length === 0 && <div className="no-data">No data available</div>}
+            </tbody>
+          </table>
+          {books.length === 0 && <div className="no-data">No data available</div>}
+        </div>
       </div>
-    </div>
   )
 
   // Render Books Search (1.3, 1.4, 1.5)
@@ -718,21 +910,20 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
             <label>Genre:</label>
             <select value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
               <option value="">All Genres</option>
+              <option value="Technology">Technology</option>
               <option value="Fiction">Fiction</option>
-              <option value="Non-Fiction">Non-Fiction</option>
               <option value="Science">Science</option>
               <option value="History">History</option>
-              <option value="Biography">Biography</option>
+              <option value="Management">Management</option>
             </select>
           </div>
           <div className="filter-group">
             <label>Language:</label>
             <select value={languageFilter} onChange={(e) => setLanguageFilter(e.target.value)}>
               <option value="">All Languages</option>
-              <option value="English">English</option>
               <option value="Chinese">Chinese</option>
-              <option value="Spanish">Spanish</option>
-              <option value="French">French</option>
+              <option value="English">English</option>
+              <option value="Others">Others</option>
             </select>
           </div>
           <div className="filter-group">
@@ -1403,6 +1594,341 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     )
   }
 
+  // 渲染系统公告
+  const renderAnnouncements = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>📢 System Announcements</h2>
+        </div>
+
+        {selectedAnnouncement ? (
+            <div className="profile-card">
+              <button className="action-btn" onClick={() => setSelectedAnnouncement(null)} style={{marginBottom: '20px'}}>← Back to List</button>
+              <h3 style={{fontSize: '24px', fontWeight: 'bold'}}>{selectedAnnouncement.title}</h3>
+              <p style={{color: '#666', fontSize: '14px', marginBottom: '20px'}}>Published: {new Date(selectedAnnouncement.publishedAt).toLocaleString()}</p>
+              <div style={{lineHeight: '1.6', whiteSpace: 'pre-wrap'}}>{selectedAnnouncement.content}</div>
+            </div>
+        ) : (
+            <div className="table-section">
+              <table className="data-table">
+                <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+                </thead>
+                <tbody>
+                {announcementsLoading ? (
+                    <tr><td colSpan="4" className="no-data">Loading...</td></tr>
+                ) : announcements.length > 0 ? (
+                    announcements.map((ann) => (
+                        <tr key={ann.id}>
+                          <td style={{fontWeight: '500'}}>{ann.title}</td>
+                          <td><span className="status-badge info">{ann.type}</span></td>
+                          <td>{new Date(ann.publishedAt).toLocaleDateString()}</td>
+                          <td>
+                            <button className="action-btn" onClick={() => setSelectedAnnouncement(ann)}>View Detail</button>
+                          </td>
+                        </tr>
+                    ))
+                ) : (
+                    <tr><td colSpan="4" className="no-data">No announcements found.</td></tr>
+                )}
+                </tbody>
+              </table>
+            </div>
+        )}
+      </div>
+  );
+
+  // 渲染新书通报
+  const renderNewBooks = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>✨ New Arrivals</h2>
+          <p>Explore the latest books added to our collection this month.</p>
+        </div>
+
+        {bookDetail && selectedBook && (
+            <div className="modal-overlay book-detail-modal" onClick={() => { setSelectedBook(null); setBookDetail(null); }}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <button className="modal-close" onClick={() => { setSelectedBook(null); setBookDetail(null); }}>×</button>
+                <div className="book-detail">
+                  <div className="book-detail-info">
+                    <h3>{bookDetail.title}</h3>
+                    <p className="book-detail-author">Author: {bookDetail.author}</p>
+                    <div className="book-detail-grid">
+                      <div className="book-detail-item"><strong>ISBN:</strong> {bookDetail.isbn}</div>
+                      <div className="book-detail-item"><strong>Genre:</strong> {bookDetail.genre}</div>
+                      <div className="book-detail-item"><strong>Language:</strong> {bookDetail.language}</div>
+                      <div className="book-detail-item"><strong>Location:</strong> {bookDetail.shelfLocation || 'N/A'}</div>
+                      <div className="book-detail-item"><strong>Available Copies:</strong> {bookDetail.availableCopies}</div>
+                      <div className="book-detail-item">
+                        <strong>Status:</strong>
+                        <span className={`status-badge ${bookDetail.available ? 'success' : 'danger'}`}>
+                      {bookDetail.available ? 'Available' : 'Borrowed'}
+                    </span>
+                      </div>
+                      {bookDetail.averageRating && (
+                          <div className="book-detail-item"><strong>Avg Rating:</strong> ⭐ {bookDetail.averageRating.toFixed(1)}</div>
+                      )}
+                      {bookDetail.description && (
+                          <div className="book-detail-item book-detail-desc"><strong>Description:</strong> {bookDetail.description}</div>
+                      )}
+                    </div>
+                    <div className="book-actions">
+                      {bookDetail.available ? (
+                          <button
+                              className="borrow-btn"
+                              onClick={() => handleBorrow(bookDetail.id)}
+                              disabled={borrowLoading}
+                          >
+                            {borrowLoading ? 'Borrowing...' : '📖 Borrow Now'}
+                          </button>
+                      ) : (
+                          <button
+                              className="hold-btn"
+                              onClick={() => handleHoldBook(bookDetail.id)}
+                              disabled={holdLoading}
+                          >
+                            {holdLoading ? 'Holding...' : '⏳ Hold Book'}
+                          </button>
+                      )}
+                      <button
+                          className="wishlist-btn"
+                          onClick={() => handleAddToWishlist(bookDetail.id)}
+                          disabled={wishlistAddLoading}
+                      >
+                        {wishlistAddLoading ? 'Adding...' : '❤️ Add to Wishlist'}
+                      </button>
+                    </div>
+
+                    {/* Rating Section */}
+                    <div className="rating-section">
+                      <h4>Rate this book</h4>
+                      <div className="rating-stars">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                                key={star}
+                                className={`star-btn ${userRating >= star ? 'active' : ''}`}
+                                onClick={() => handleRateBook(bookDetail.id, star)}
+                                disabled={ratingLoading}
+                            >
+                              ⭐
+                            </button>
+                        ))}
+                      </div>
+                      {userRating && <p>Your rating: {userRating} stars</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+        )}
+        {/* --- 弹窗代码结束 --- */}
+
+        <div className="books-grid">
+          {newBooksLoading ? (
+              <div className="no-data">Loading...</div>
+          ) : newBooks.length > 0 ? (
+              newBooks.map((book) => (
+                  <div key={book.id} className="book-card" onClick={() => handleViewDetail(book.id)} style={{cursor: 'pointer'}}>
+                    <div className="book-cover">📚</div>
+                    <div className="book-info">
+                      <h3>{book.title}</h3>
+                      <p className="book-author">{book.author}</p>
+                      <div className="book-status">
+                  <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
+                    {book.available ? 'Available' : 'Borrowed'}
+                  </span>
+                        <span className="date-badge" style={{fontSize: '12px', color: '#666', marginLeft: '8px'}}>New!</span>
+                      </div>
+                    </div>
+                  </div>
+              ))
+          ) : (
+              <div className="no-data">No new books this month.</div>
+          )}
+        </div>
+      </div>
+  );
+
+  // 渲染资源荐购页面 (3.2)
+  const renderRecommend = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>💡 Book Recommendation</h2>
+          <p>Suggest new books for the library to purchase.</p>
+        </div>
+
+        {message.text && (
+            <div className={`message ${message.type}`}>
+              {message.text}
+            </div>
+        )}
+
+        {/* 提交表单区域 */}
+        <div className="profile-card" style={{ marginBottom: '30px' }}>
+          <h3 style={{ marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Submit a Request</h3>
+          <form onSubmit={handleAcqSubmit} className="profile-form">
+            <div className="form-group">
+              <label>Title <span style={{color: '#ef4444'}}>*</span></label>
+              <input type="text" className="profile-input" required placeholder="Enter book title"
+                     value={acqForm.title} onChange={(e) => setAcqForm({...acqForm, title: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Author</label>
+              <input type="text" className="profile-input" placeholder="Enter author name"
+                     value={acqForm.author} onChange={(e) => setAcqForm({...acqForm, author: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>ISBN</label>
+              <input type="text" className="profile-input" placeholder="10 or 13 digit ISBN"
+                     value={acqForm.isbn} onChange={(e) => setAcqForm({...acqForm, isbn: e.target.value})} />
+            </div>
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Reason / Note</label>
+              <textarea className="profile-input" rows="3" placeholder="Why should we buy this book?"
+                        value={acqForm.reason} onChange={(e) => setAcqForm({...acqForm, reason: e.target.value})}></textarea>
+            </div>
+            <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="save-btn" disabled={acqSubmitLoading}>
+                {acqSubmitLoading ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* 历史记录区域 */}
+        <div className="table-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3>My Requests</h3>
+            <select className="filter-select" value={acqStatusFilter} onChange={(e) => {
+              setAcqStatusFilter(e.target.value);
+              fetchAcquisitions(e.target.value);
+            }}>
+              <option value="">All Status</option>
+              <option value="PENDING">Pending</option>
+              <option value="ACCEPTED">Accepted</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+
+          <table className="data-table">
+            <thead>
+            <tr>
+              <th>Title</th>
+              <th>Author</th>
+              <th>Status</th>
+              <th>Submitted Date</th>
+            </tr>
+            </thead>
+            <tbody>
+            {acquisitionsLoading ? (
+                <tr><td colSpan="4" className="no-data">Loading...</td></tr>
+            ) : acquisitions.length > 0 ? (
+                acquisitions.map(req => (
+                    <tr key={req.id}>
+                      <td style={{fontWeight: '500'}}>{req.title}</td>
+                      <td>{req.author || '-'}</td>
+                      <td>
+                    <span className={`status-badge ${
+                        req.status === 'ACCEPTED' ? 'success' :
+                            req.status === 'REJECTED' ? 'danger' : 'warning'
+                    }`}>
+                      {req.status}
+                    </span>
+                      </td>
+                      <td>{new Date(req.createdAt).toLocaleDateString('en-US')}</td>
+                    </tr>
+                ))
+            ) : (
+                <tr><td colSpan="4" className="no-data">No recommendation records found.</td></tr>
+            )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+  );
+
+  // 渲染借阅排行榜页面 (3.5)
+  const renderRanking = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>🏆 Borrowing Leaderboard</h2>
+          <p>Discover the most popular books in our library.</p>
+        </div>
+
+        <div className="table-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3>Top 10 Books</h3>
+            {/* 时间范围筛选框，强制对齐 SPM 需求 */}
+            <select className="filter-select" value={rankingPeriod} onChange={(e) => {
+              setRankingPeriod(e.target.value);
+              fetchRankings(e.target.value);
+            }}>
+              <option value="month">This Month</option>
+              <option value="3months">Last 3 Months</option>
+              <option value="year">Last Year</option>
+            </select>
+          </div>
+
+          <table className="data-table">
+            <thead>
+            <tr>
+              <th style={{width: '60px', textAlign: 'center'}}>Rank</th>
+              <th style={{width: '60px'}}>Cover</th>
+              <th>Title</th>
+              <th>Author</th>
+              <th style={{width: '100px', textAlign: 'center'}}>Borrows</th>
+            </tr>
+            </thead>
+            <tbody>
+            {rankingsLoading ? (
+                <tr><td colSpan="5" className="no-data">Loading...</td></tr>
+            ) : rankings.length > 0 ? (
+                rankings.map((book, index) => (
+                    <tr key={book.bookId || index}>
+                      <td style={{textAlign: 'center'}}>
+                        {/* 给前三名加点“土豪金/白银/青铜”的特效 */}
+                        <span className="status-badge" style={{
+                          backgroundColor: index === 0 ? '#fef08a' : index === 1 ? '#e2e8f0' : index === 2 ? '#fed7aa' : '#f3f4f6',
+                          color: index === 0 ? '#854d0e' : index === 1 ? '#475569' : index === 2 ? '#9a3412' : '#374151',
+                          fontWeight: 'bold', fontSize: '14px', width: '28px', display: 'inline-block', textAlign: 'center'
+                        }}>
+                      {index + 1}
+                    </span>
+                      </td>
+                      <td style={{ fontSize: '24px' }}>📚</td>
+                      <td>
+                        {/* 书名可点击，触发借阅/详情弹窗 */}
+                        <span
+                            onClick={() => handleViewDetail(book.bookId)}
+                            style={{ fontWeight: '600', color: '#2563eb', cursor: 'pointer' }}
+                            className="book-title-clickable hover:underline"
+                        >
+                      {book.bookTitle}
+                    </span>
+                      </td>
+                      <td>{book.bookAuthor || '-'}</td>
+                      <td style={{textAlign: 'center'}}>
+                    <span style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '16px' }}>
+                      {book.loanCount}
+                    </span>
+                      </td>
+                    </tr>
+                ))
+            ) : (
+                <tr><td colSpan="5" className="no-data">No ranking data available for this period.</td></tr>
+            )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+  );
+
   // Render Return Book page
   const renderReturnBook = () => {
     return (
@@ -1496,10 +2022,16 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   }
 
   switch (currentPage) {
+    case 'announcements':
+      return renderAnnouncements()
+    case 'new-books':
+      return renderNewBooks()
     case 'dashboard':
       return renderDashboard()
     case 'books':
       return renderBooks()
+    case 'ranking':
+      return renderRanking()
     case 'loans':
       return renderLoans()
     case 'holds':
@@ -1510,6 +2042,8 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       return renderWishlist()
     case 'fines':
       return renderFines()
+    case 'recommend':
+      return renderRecommend()
     case 'profile':
       return renderProfile()
     default:
