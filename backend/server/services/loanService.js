@@ -401,6 +401,25 @@ async function createLoan(userId, payload) {
     throw new AppError(400, "Invalid parameters");
   }
 
+  await syncOverdueLoansForUser(userId);
+
+  const { maxBooks } = await getLoanPolicy();
+  const activeLoanCount = await prisma.loan.count({
+    where: {
+      userId,
+      returnDate: null,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+  });
+
+  if (activeLoanCount >= maxBooks) {
+    const unit = maxBooks === 1 ? "book" : "books";
+    throw new AppError(
+      400,
+      `You have reached the borrowing limit (${maxBooks} ${unit}). Please return some books before borrowing more.`,
+    );
+  }
+
   const book = await ensureBorrowAllowed(userId, { bookId });
   const { loan, nextAvailableCopies } = await createLoanRecord({
     userId,
@@ -420,6 +439,26 @@ async function createLoan(userId, payload) {
 
 async function librarianCheckoutLoan(payload, actorUserId) {
   const borrower = await ensureUserExists(payload?.userId);
+
+  await syncOverdueLoansForUser(borrower.id);
+
+  const { maxBooks } = await getLoanPolicy();
+  const activeLoanCount = await prisma.loan.count({
+    where: {
+      userId: borrower.id,
+      returnDate: null,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+  });
+
+  if (activeLoanCount >= maxBooks) {
+    const unit = maxBooks === 1 ? "book" : "books";
+    throw new AppError(
+      400,
+      `You have reached the borrowing limit (${maxBooks} ${unit}). Please return some books before borrowing more.`,
+    );
+  }
+
   const book = await ensureBorrowAllowed(
     borrower.id,
     payload,
