@@ -14,6 +14,7 @@ async function computeOverdueFineAmount(loan, returnDate) {
 
 async function syncOverdueLoans(where = {}) {
   const now = new Date();
+  const { fineRate } = await getLoanPolicy();
 
   await prisma.loan.updateMany({
     where: {
@@ -24,6 +25,7 @@ async function syncOverdueLoans(where = {}) {
     },
     data: {
       status: "Overdue",
+      fineAmount: fineRate,
     },
   });
 }
@@ -230,15 +232,14 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
     });
 
     if (actorUserId && action) {
-      await tx.auditLog.create({
-        data: {
-          userId: actorUserId,
-          action,
-          entity: "Loan",
-          entityId: createdLoan.id,
-          detail: detail || null,
-        },
-      });
+      await auditLogService.recordWithClient(
+        tx,
+        actorUserId,
+        action,
+        "Loan",
+        createdLoan.id,
+        detail || null,
+      );
     }
 
     return createdLoan;
@@ -252,7 +253,9 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
 
 async function finalizeLoanReturn(loan, actorUserId, action, detail) {
   const now = new Date();
-  const fineAmount = loan.dueDate < now ? OVERDUE_FINE_AMOUNT : 0;
+  const computedFine = await computeOverdueFineAmount(loan, now);
+  const existingFine = Number(loan.fineAmount) || 0;
+  const fineAmount = Math.max(existingFine, computedFine);
   const nextAvailableCopies = loan.book.availableCopies + 1;
 
   const updatedLoan = await prisma.$transaction(async (tx) => {
@@ -286,15 +289,14 @@ async function finalizeLoanReturn(loan, actorUserId, action, detail) {
     });
 
     if (actorUserId && action) {
-      await tx.auditLog.create({
-        data: {
-          userId: actorUserId,
-          action,
-          entity: "Loan",
-          entityId: loan.id,
-          detail: detail || null,
-        },
-      });
+      await auditLogService.recordWithClient(
+        tx,
+        actorUserId,
+        action,
+        "Loan",
+        loan.id,
+        detail || null,
+      );
     }
 
     return returnedLoan;
@@ -457,6 +459,12 @@ async function createLoan(userId, payload) {
   const { loan, nextAvailableCopies } = await createLoanRecord({
     userId,
     book,
+    actorUserId: userId,
+    action: "USER_BORROW",
+    detail: {
+      borrowerId: userId,
+      bookId: book.id,
+    },
   });
 
   return {
@@ -507,11 +515,11 @@ async function librarianCheckoutLoan(payload, actorUserId) {
     book,
     actorUserId,
     action: "LIBRARIAN_CHECKOUT",
-    detail: JSON.stringify({
+    detail: {
       borrowerId: borrower.id,
       bookId: book.id,
       bookIdentifier: payload?.bookId || payload?.isbn || payload?.bookIdOrIsbn || book.id,
-    }),
+    },
   });
 
   return {
@@ -586,6 +594,12 @@ async function renewLoan(userId, loanId) {
     },
   });
 
+  await auditLogService.record(userId, "USER_RENEW_LOAN", "Loan", loanId, {
+    oldDueDate: formatDateTime(loan.dueDate),
+    newDueDate: formatDateTime(updatedLoan.dueDate),
+    renewalCount: updatedLoan.renewalCount,
+  });
+
   return {
     id: updatedLoan.id,
     dueDate: formatDateTime(updatedLoan.dueDate),
@@ -616,7 +630,9 @@ async function returnLoan(userId, loanId) {
   }
 
   const now = new Date();
-  const fineAmount = await computeOverdueFineAmount(loan, now);
+  const computedFine = await computeOverdueFineAmount(loan, now);
+  const existingFine = Number(loan.fineAmount) || 0;
+  const fineAmount = Math.max(existingFine, computedFine);
   let nextAvailableCopies;
 
   const updatedLoan = await prisma.$transaction(async (tx) => {
@@ -649,6 +665,13 @@ async function returnLoan(userId, loanId) {
         availableCopies: nextAvailableCopies,
         available: true,
       },
+    });
+
+    await auditLogService.recordWithClient(tx, userId, "USER_RETURN", "Loan", returnedLoan.id, {
+      borrowerId: userId,
+      bookId: returnedLoan.bookId,
+      bookCopyId: returnedLoan.bookCopyId,
+      fineAmount,
     });
 
     return returnedLoan;

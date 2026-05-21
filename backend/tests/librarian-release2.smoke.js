@@ -280,7 +280,7 @@ async function main() {
     }),
   });
   assert.equal(overdueReturn.response.status, 200);
-  assert.equal(overdueReturn.body.data.fineAmount, 5);
+  assert.equal(overdueReturn.body.data.fineAmount, 2.5);
 
   const blockedCheckout = await request("/api/librarian/loans/checkout", {
     method: "POST",

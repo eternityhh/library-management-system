@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
     maxBorrowBooks: 5,
   },
   fineRules: {
-    dailyFineRate: 1.0,
+    dailyFineRate: 2.5,
   },
 };
 

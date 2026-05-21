@@ -332,8 +332,25 @@ async function deleteUser(operatorId, targetUserId) {
     }
   }
 
-  await prisma.user.delete({
-    where: { id: targetUserId },
+  const detail = {
+    name: targetUser.name,
+    email: targetUser.email,
+    role: targetUser.role,
+  };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({
+      where: { id: targetUserId },
+    });
+
+    await auditLogService.recordWithClient(
+      tx,
+      operatorId,
+      "ADMIN_DELETE_USER",
+      "User",
+      targetUserId,
+      detail,
+    );
   });
 
   return null;

@@ -1,6 +1,7 @@
 // backend/services/acquisitionService.js
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
+const auditLogService = require("./auditLogService");
 
 class AcquisitionService {
   /**
@@ -22,6 +23,14 @@ class AcquisitionService {
         reason: reason || null,
         status: "PENDING"
       }
+    });
+
+    await auditLogService.record(userId, "CREATE_ACQUISITION_REQUEST", "AcquisitionRequest", request.id, {
+      title: request.title,
+      author: request.author,
+      isbn: request.isbn,
+      reason: request.reason,
+      status: request.status,
     });
     
     return {

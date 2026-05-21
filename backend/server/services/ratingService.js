@@ -1,4 +1,5 @@
 const prisma = require("../db/prisma");
+const auditLogService = require("./auditLogService");
 
 class RatingService {
   // Check whether the user has borrowed a specific book.
@@ -46,6 +47,12 @@ class RatingService {
       });
       isUpdate = false;
     }
+
+    const action = isUpdate ? "UPDATE_RATING" : "CREATE_RATING";
+    await auditLogService.record(userId, action, "Rating", rating.id, {
+      bookId,
+      stars,
+    });
 
     return { rating, isUpdate };
   }

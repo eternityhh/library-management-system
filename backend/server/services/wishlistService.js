@@ -1,6 +1,7 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { formatDateTime } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 
 async function addToWishlist(userId, bookId) {
   // Check whether the book exists and is visible.
@@ -24,15 +25,23 @@ async function addToWishlist(userId, bookId) {
     throw new AppError(400, "This book is already in the wishlist");
   }
 
-  // Create wishlist entry.
-  const wishlist = await prisma.wishlist.create({
-    data: {
-      userId,
-      bookId,
-    },
-    include: {
-      book: true,
-    },
+  const wishlist = await prisma.$transaction(async (tx) => {
+    const record = await tx.wishlist.create({
+      data: {
+        userId,
+        bookId,
+      },
+      include: {
+        book: true,
+      },
+    });
+
+    await auditLogService.recordWithClient(tx, userId, "WISHLIST_ADD", "Wishlist", record.id, {
+      bookId: record.bookId,
+      bookTitle: record.book.title,
+    });
+
+    return record;
   });
 
   return {
@@ -87,16 +96,26 @@ async function getWishlist(userId, page = 1, size = 10) {
 }
 
 async function removeFromWishlist(userId, wishlistId) {
-  const wishlist = await prisma.wishlist.findUnique({
-    where: { id: wishlistId },
-  });
+  await prisma.$transaction(async (tx) => {
+    const wishlist = await tx.wishlist.findUnique({
+      where: { id: wishlistId },
+      include: {
+        book: true,
+      },
+    });
 
-  if (!wishlist || wishlist.userId !== userId) {
-    throw new AppError(404, "Wishlist record not found or does not belong to the current user");
-  }
+    if (!wishlist || wishlist.userId !== userId) {
+      throw new AppError(404, "Wishlist record not found or does not belong to the current user");
+    }
 
-  await prisma.wishlist.delete({
-    where: { id: wishlistId },
+    await tx.wishlist.delete({
+      where: { id: wishlistId },
+    });
+
+    await auditLogService.recordWithClient(tx, userId, "WISHLIST_REMOVE", "Wishlist", wishlistId, {
+      bookId: wishlist.bookId,
+      bookTitle: wishlist.book?.title || null,
+    });
   });
 }
 

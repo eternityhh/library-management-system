@@ -2,8 +2,9 @@ const bcrypt = require("bcrypt");
 
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
-const { issueToken, revokeToken } = require("../lib/token");
+const { issueToken, revokeToken, verifyToken } = require("../lib/token");
 const { formatDateTime } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 
 function toUserProfile(user) {
   return {
@@ -50,6 +51,12 @@ async function register(payload) {
     },
   });
 
+  await auditLogService.record(user.id, "USER_REGISTER", "User", user.id, {
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
+
   return {
     userId: user.id,
     name: user.name,
@@ -83,6 +90,11 @@ async function login(payload, res) {
     role: user.role,
   });
 
+  await auditLogService.record(user.id, "USER_LOGIN", "User", user.id, {
+    email: user.email,
+    role: user.role,
+  });
+
   if (res) {
     res.cookie("token", token, {
       httpOnly: true,
@@ -102,6 +114,13 @@ async function login(payload, res) {
 async function logout(token) {
   if (!token) {
     throw new AppError(401, "Not logged in or invalid token");
+  }
+
+  const payload = verifyToken(token);
+  if (payload?.userId) {
+    await auditLogService.record(payload.userId, "USER_LOGOUT", "User", payload.userId, {
+      role: payload.role,
+    });
   }
 
   revokeToken(token);
