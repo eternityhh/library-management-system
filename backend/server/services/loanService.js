@@ -33,8 +33,8 @@ async function syncOverdueLoansForUser(userId) {
 }
 /**
  * Return current loans.
- * @param {} loan 
- * @returns 
+ * @param {} loan
+ * @returns
  */
 function toCurrentLoan(loan) {
   return {
@@ -51,8 +51,8 @@ function toCurrentLoan(loan) {
 }
 /**
  * Return loan history.
- * @param {} loan 
- * @returns 
+ * @param {} loan
+ * @returns
  */
 function toHistoryLoan(loan) {
   return {
@@ -358,7 +358,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
   ]);
 
   const totalPages = Math.ceil(totalCount / size);
-  
+
   return {
     total: totalCount,
     page,
@@ -380,11 +380,44 @@ async function getLibrarianLoans(query = {}) {
     throw new AppError(400, "Invalid pagination parameters");
   }
 
-  if (!book.available || book.availableCopies <= 0) {
-    throw new AppError(400, "This book is currently unavailable, or you have unpaid fines");
+  const where = {};
+
+  if (!status || status === "ACTIVE") {
+    where.status = {
+      in: ACTIVE_LOAN_STATUSES,
+    };
+  } else if (status !== "ALL") {
+    where.status = status;
   }
 
-  await ensureNoUnpaidFines(userId);
+  if (keyword) {
+    where.OR = [
+      { id: { contains: keyword } },
+      { user: { name: { contains: keyword } } },
+      { user: { email: { contains: keyword } } },
+      { book: { title: { contains: keyword } } },
+      { book: { isbn: { contains: keyword } } },
+    ];
+  }
+
+  const skip = (page - 1) * size;
+
+  const [loans, total] = await Promise.all([
+    prisma.loan.findMany({
+      where,
+      include: {
+        book: true,
+        user: true,
+      },
+      orderBy: [
+        { dueDate: "asc" },
+        { checkoutDate: "desc" },
+      ],
+      skip,
+      take: size,
+    }),
+    prisma.loan.count({ where }),
+  ]);
 
   return {
     total,
