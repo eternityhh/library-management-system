@@ -8,6 +8,7 @@
     "test:smoke": "node tests/reader-release1.smoke.js",
     "test:admin": "node tests/admin-release1.smoke.js",
     "test:admin:r2": "node tests/admin-release2.smoke.js",
+    "test:admin:dashboard": "node tests/admin-dashboard.smoke.js",
     "test:librarian-release2": "node tests/librarian-release2.smoke.js",
     "test:librarian-hold-release2": "node tests/librarian-hold-release2.smoke.js",
     "dev": "nodemon index.js",
