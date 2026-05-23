@@ -27,9 +27,9 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "puppeteer": "^24.5.0",
     "express": "^5.2.1",
-    "prisma": "^7.4.2"
+    "prisma": "^7.4.2",
+    "puppeteer": "^24.5.0"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
