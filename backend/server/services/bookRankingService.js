@@ -46,7 +46,7 @@ function toRankingItem(row, index) {
 }
 
 async function getRanking(query) {
-  const range = normalizeRange(query?.range);
+  const range = normalizeRange(query?.period);
   const startDate = getStartDate(range);
   const rows = await prisma.$queryRaw`
     SELECT
