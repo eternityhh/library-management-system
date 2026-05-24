@@ -4,17 +4,16 @@ const { getLoanPolicy } = require("../config/loanPolicy");
 const { formatDateTime, addDays, overdueWholeDays } = require("../utils/date");
 const auditLogService = require("./auditLogService");
 const ACTIVE_LOAN_STATUSES = ["Borrowing", "Overdue"];
+const OVERDUE_FINE_AMOUNT = 5;
 
 async function computeOverdueFineAmount(loan, returnDate) {
-  const { fineRate } = await getLoanPolicy();
   const days = overdueWholeDays(loan.dueDate, returnDate);
   if (days <= 0) return 0;
-  return Math.round(days * fineRate * 100) / 100;
+  return OVERDUE_FINE_AMOUNT;
 }
 
 async function syncOverdueLoans(where = {}) {
   const now = new Date();
-  const { fineRate } = await getLoanPolicy();
 
   await prisma.loan.updateMany({
     where: {
@@ -25,7 +24,7 @@ async function syncOverdueLoans(where = {}) {
     },
     data: {
       status: "Overdue",
-      fineAmount: fineRate,
+      fineAmount: OVERDUE_FINE_AMOUNT,
     },
   });
 }
@@ -265,7 +264,7 @@ async function finalizeLoanReturn(loan, actorUserId, action, detail) {
         returnDate: now,
         status: "Returned",
         fineAmount,
-        finePaid: fineAmount === 0,
+        finePaid: loan.finePaid || fineAmount === 0,
       },
       include: {
         book: true,
@@ -642,7 +641,7 @@ async function returnLoan(userId, loanId) {
         returnDate: now,
         status: "Returned",
         fineAmount,
-        finePaid: fineAmount === 0,
+        finePaid: loan.finePaid || fineAmount === 0,
       },
       include: {
         book: true,

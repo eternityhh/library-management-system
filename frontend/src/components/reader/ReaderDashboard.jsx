@@ -52,6 +52,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
   // 罚款支付状态
   const [payFineLoading, setPayFineLoading] = useState(false)
+  const [selectedFine, setSelectedFine] = useState(null)
 
   // 还书状态
   const [returnBarcode, setReturnBarcode] = useState('')
@@ -204,6 +205,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   const [acquisitionsLoading, setAcquisitionsLoading] = useState(false);
   const [acqForm, setAcqForm] = useState({ title: '', author: '', isbn: '', reason: '' });
   const [acqSubmitLoading, setAcqSubmitLoading] = useState(false);
+  const [acqLookupLoading, setAcqLookupLoading] = useState(false);
   const [acqStatusFilter, setAcqStatusFilter] = useState('');
 
   // 获取荐购记录
@@ -223,13 +225,68 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     setAcquisitionsLoading(false);
   };
 
+  const handleAcqLookupIsbn = async (isbn) => {
+    const normalizedIsbn = isbn.trim();
+    if (!normalizedIsbn || normalizedIsbn.length < 10) {
+      showMessage('error', 'Please enter a valid ISBN (at least 10 characters)');
+      return null;
+    }
+
+    setAcqLookupLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/books/scrape?isbn=${encodeURIComponent(normalizedIsbn)}`);
+      const data = await res.json();
+
+      if (res.ok && data.code === 200 && data.data?.title) {
+        const bookInfo = {
+          title: data.data.title || '',
+          author: data.data.author || ''
+        };
+        setAcqForm((prev) => ({
+          ...prev,
+          isbn: normalizedIsbn,
+          title: bookInfo.title,
+          author: bookInfo.author
+        }));
+        showMessage('success', 'Book information has been auto-filled');
+        return bookInfo;
+      }
+
+      showMessage('error', data.message || 'Unable to find book information for this ISBN');
+      return null;
+    } catch (err) {
+      showMessage('error', 'Network error: ' + err.message);
+      return null;
+    } finally {
+      setAcqLookupLoading(false);
+    }
+  };
+
   // 提交荐购申请
   const handleAcqSubmit = async (e) => {
     e.preventDefault();
-    if (!acqForm.title.trim()) {
-      showMessage('error', 'Book title is required');
+    if (!acqForm.isbn.trim()) {
+      showMessage('error', 'ISBN is required');
       return;
     }
+
+    let title = acqForm.title.trim();
+    let author = acqForm.author.trim();
+    if (!title) {
+      const bookInfo = await handleAcqLookupIsbn(acqForm.isbn);
+      if (!bookInfo?.title) {
+        return;
+      }
+
+      title = bookInfo.title.trim();
+      author = bookInfo.author.trim();
+    }
+
+    if (!title) {
+      showMessage('error', 'Unable to submit without a valid ISBN lookup result');
+      return;
+    }
+
     setAcqSubmitLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -239,7 +296,11 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(acqForm)
+        body: JSON.stringify({
+          ...acqForm,
+          title,
+          author
+        })
       });
       const data = await res.json();
       if (res.ok && data.code === 200) {
@@ -399,6 +460,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       if (!res.ok) {
         const errorMessage = data?.message || `HTTP error! status: ${res.status}`
         showMessage('error', errorMessage)
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
         return
       }
 
@@ -409,11 +471,13 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         if (bookDetail) handleViewDetail(bookId)
       } else {
         showMessage('error', data?.message || 'Borrow failed')
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
+    } finally {
+      setBorrowLoading(false)
     }
-    setBorrowLoading(false)
   }
 
   // Get profile (1.8)
@@ -466,6 +530,12 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     setLoanHistoryLoading(false)
   }
 
+  const refreshLoanStatusViews = (page = loanHistoryPagination.page || 1, size = loanHistoryPagination.size || 10) => {
+    fetchLoanHistory(page, size)
+    fetchFines()
+    onRefreshStats && onRefreshStats()
+  }
+
   // Renew loan
   const handleRenew = async (loanId) => {
     setRenewLoading(true)
@@ -478,10 +548,10 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       const data = await res.json()
       if (res.ok) {
         showMessage('success', `Renewed successfully! New due date: ${new Date(data.data.dueDate).toLocaleDateString('en-US')}`)
-        fetchLoanHistory(loanHistoryPagination.page, loanHistoryPagination.size)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Renew failed')
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
@@ -501,8 +571,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       const data = await res.json()
       if (res.ok) {
         showMessage('success', `Book returned successfully! ${data.data.fineAmount > 0 ? `Fine: $${data.data.fineAmount}` : ''}`)
-        fetchLoanHistory(loanHistoryPagination.page, loanHistoryPagination.size)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Return failed')
       }
@@ -541,7 +610,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         })
         setReturnBarcode('')
         showMessage('success', `Book returned successfully!${data.data.fineAmount > 0 ? ` Fine: $${data.data.fineAmount}` : ''}`)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         setReturnResult({ success: false, message: data.message || 'Return failed' })
         showMessage('error', data.message || 'Return failed')
@@ -729,14 +798,16 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     setFinesLoading(true)
     const token = localStorage.getItem('token')
     try {
-      // 只显示未交罚金的逾期记录
+      // Only show unpaid fines after the book has been returned.
       const historyRes = await fetch(`${API_BASE}/loans/history?page=1&size=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const historyData = await historyRes.json()
       if (historyRes.ok) {
-        const overdueUnpaidLoans = (historyData.data?.list || []).filter(loan => loan.status === 'Overdue' && loan.finePaid === false)
-        setFines(overdueUnpaidLoans)
+        const returnedUnpaidLoans = (historyData.data?.list || []).filter(
+          (loan) => loan.status === 'Returned' && Number(loan.fineAmount || 0) > 0 && loan.finePaid === false
+        )
+        setFines(returnedUnpaidLoans)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
@@ -745,19 +816,33 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   }
 
   // Pay fine
-  const handlePayFine = async (loanId) => {
+  const handleOpenFinePayment = (fine) => {
+    setSelectedFine(fine)
+  }
+
+  const handleCloseFinePayment = () => {
+    if (!payFineLoading) {
+      setSelectedFine(null)
+    }
+  }
+
+  const handlePayFine = async (fine) => {
     setPayFineLoading(true)
     const token = localStorage.getItem('token')
     try {
-      const res = await fetch(`${API_BASE}/loans/${loanId}/pay-fine`, {
+      const res = await fetch(`${API_BASE}/loans/${fine.id}/pay-fine`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount: Number(fine.fineAmount) })
       })
       const data = await res.json()
       if (res.ok) {
         showMessage('success', 'Fine paid successfully')
-        fetchFines()
-        onRefreshStats && onRefreshStats()
+        setSelectedFine(null)
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Payment failed')
       }
@@ -1152,7 +1237,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         )}
 
         <div className="table-section">
-          <table className="data-table">
+          <table className="data-table reader-loans-table">
             <thead>
               <tr>
                 <th>Title</th>
@@ -1190,26 +1275,27 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                          loan.status === 'Overdue' ? 'Overdue' : 'Returned'}
                       </span>
                     </td>
-                    <td>
-                      {loan.status === 'Borrowing' && (loan.renewalCount || 0) < 1 && (
-                        <button
-                          className="action-btn renew-btn"
-                          onClick={() => handleRenew(loan.id)}
-                          disabled={renewLoading}
-                        >
-                          {renewLoading ? 'Renewing...' : 'Renew'}
-                        </button>
-                      )}
-                      {(loan.status === 'Borrowing' || loan.status === 'Overdue') && (
-                        <button
-                          className="action-btn return-btn"
-                          onClick={() => handleReturn(loan.id)}
-                          disabled={returnLoading}
-                          style={{ marginLeft: '8px' }}
-                        >
-                          {returnLoading ? 'Returning...' : 'Return'}
-                        </button>
-                      )}
+                    <td className="actions-cell">
+                      <div className="loan-history-actions">
+                        {loan.status === 'Borrowing' && (loan.renewalCount || 0) < 1 && (
+                          <button
+                            className="action-btn renew-btn"
+                            onClick={() => handleRenew(loan.id)}
+                            disabled={renewLoading}
+                          >
+                            {renewLoading ? 'Renewing...' : 'Renew'}
+                          </button>
+                        )}
+                        {(loan.status === 'Borrowing' || loan.status === 'Overdue') && (
+                          <button
+                            className="action-btn return-btn"
+                            onClick={() => handleReturn(loan.id)}
+                            disabled={returnLoading}
+                          >
+                            {returnLoading ? 'Returning...' : 'Return'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1224,7 +1310,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
         {/* Pagination */}
         {loanHistory.length > 0 && (
-          <div className="pagination">
+          <div className="pagination reader-pagination">
             <button
               className="pagination-btn"
               onClick={() => fetchLoanHistory(loanHistoryPagination.page - 1, loanHistoryPagination.size)}
@@ -1285,7 +1371,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         )}
 
         <div className="table-section">
-          <table className="data-table">
+          <table className="data-table reader-wishlist-table">
             <thead>
               <tr>
                 <th>Title</th>
@@ -1386,7 +1472,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                       </span>
                     </td>
                     <td>{new Date(item.createdAt).toLocaleDateString('en-US')}</td>
-                    <td>
+                    <td className="actions-cell">
                       <div className="wishlist-actions">
                         {item.available && (
                           <button
@@ -1417,7 +1503,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         </div>
 
         {wishlist.length > 0 && (
-          <div className="pagination">
+          <div className="pagination reader-pagination">
             <button
               className="pagination-btn"
               onClick={() => fetchWishlist(wishlistPagination.page - 1, wishlistPagination.size)}
@@ -1481,14 +1567,14 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                     <td>{fine.bookTitle || 'Book unavailable'}</td>
                     <td>{fine.bookAuthor || 'N/A'}</td>
                     <td>{new Date(fine.dueDate).toLocaleDateString('en-US')}</td>
-                    <td>¥5.00</td>
+                    <td>¥{Number(fine.fineAmount || 0).toFixed(2)}</td>
                     <td>
                       <button
                         className="action-btn pay-btn"
-                        onClick={() => handlePayFine(fine.id)}
+                        onClick={() => handleOpenFinePayment(fine)}
                         disabled={payFineLoading}
                       >
-                        {payFineLoading ? 'Paying...' : 'Pay Fine'}
+                        {payFineLoading ? 'Processing...' : 'Pay with Alipay'}
                       </button>
                     </td>
                   </tr>
@@ -1501,6 +1587,56 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
             </tbody>
           </table>
         </div>
+
+        {selectedFine && (
+          <div className="modal-overlay" onClick={handleCloseFinePayment}>
+            <div className="modal-content fine-payment-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Pay Fine with Alipay</h3>
+                <button className="modal-close" onClick={handleCloseFinePayment}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="book-detail">
+                <div className="book-detail-info">
+                  <p className="book-detail-author">{selectedFine.bookTitle || 'Book unavailable'}</p>
+                  <div className="book-detail-grid">
+                    <div className="book-detail-item"><strong>Author:</strong> {selectedFine.bookAuthor || 'N/A'}</div>
+                    <div className="book-detail-item"><strong>Due Date:</strong> {new Date(selectedFine.dueDate).toLocaleDateString('en-US')}</div>
+                    <div className="book-detail-item"><strong>Amount:</strong> ¥{Number(selectedFine.fineAmount || 0).toFixed(2)}</div>
+                    <div className="book-detail-item book-detail-desc">
+                      <strong>How to pay:</strong> Scan the QR code with Alipay, complete the payment, then click I Have Paid.
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', margin: '24px 0 20px' }}>
+                    <img
+                      src="/alipay-qr.png"
+                      alt="Alipay QR Code"
+                      style={{ width: '240px', maxWidth: '100%', borderRadius: '16px', border: '1px solid #e5e7eb' }}
+                    />
+                  </div>
+                  <div className="form-actions" style={{ justifyContent: 'center' }}>
+                    <button
+                      className="save-btn"
+                      onClick={() => handlePayFine(selectedFine)}
+                      disabled={payFineLoading}
+                    >
+                      {payFineLoading ? 'Confirming...' : 'I Have Paid'}
+                    </button>
+                    <button
+                      type="button"
+                      className="cancel-btn"
+                      onClick={handleCloseFinePayment}
+                      disabled={payFineLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1774,19 +1910,51 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
           <h3 style={{ marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Submit a Request</h3>
           <form onSubmit={handleAcqSubmit} className="profile-form">
             <div className="form-group">
-              <label>Title <span style={{color: '#ef4444'}}>*</span></label>
-              <input type="text" className="profile-input" required placeholder="Enter book title"
-                     value={acqForm.title} onChange={(e) => setAcqForm({...acqForm, title: e.target.value})} />
+              <label>ISBN <span style={{color: '#ef4444'}}>*</span></label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  className="profile-input"
+                  required
+                  placeholder="Enter 10 or 13 digit ISBN"
+                  value={acqForm.isbn}
+                  onChange={(e) => setAcqForm({ ...acqForm, isbn: e.target.value, title: '', author: '' })}
+                  onBlur={() => {
+                    if (acqForm.isbn.trim()) {
+                      handleAcqLookupIsbn(acqForm.isbn);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="save-btn"
+                  style={{ minWidth: '120px' }}
+                  onClick={() => handleAcqLookupIsbn(acqForm.isbn)}
+                  disabled={acqLookupLoading || !acqForm.isbn.trim()}
+                >
+                  {acqLookupLoading ? 'Searching...' : 'Auto Fill'}
+                </button>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Title</label>
+              <input
+                type="text"
+                className="profile-input"
+                placeholder="Auto-filled from ISBN"
+                value={acqForm.title}
+                readOnly
+              />
             </div>
             <div className="form-group">
               <label>Author</label>
-              <input type="text" className="profile-input" placeholder="Enter author name"
-                     value={acqForm.author} onChange={(e) => setAcqForm({...acqForm, author: e.target.value})} />
-            </div>
-            <div className="form-group">
-              <label>ISBN</label>
-              <input type="text" className="profile-input" placeholder="10 or 13 digit ISBN"
-                     value={acqForm.isbn} onChange={(e) => setAcqForm({...acqForm, isbn: e.target.value})} />
+              <input
+                type="text"
+                className="profile-input"
+                placeholder="Auto-filled from ISBN"
+                value={acqForm.author}
+                readOnly
+              />
             </div>
             <div className="form-group" style={{ gridColumn: '1 / -1' }}>
               <label>Reason / Note</label>
