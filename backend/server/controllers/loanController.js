@@ -83,6 +83,16 @@ async function payFine(req, res, next) {
   }
 }
 
+async function librarianPayFine(req, res, next) {
+  try {
+    const { id } = req.params;
+    const data = await loanService.librarianPayFine(id, req.body, req.currentUser.id);
+    sendSuccess(res, data, "Fine paid successfully via Alipay");
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function librarianReturnLoan(req, res, next) {
   try {
     const data = await loanService.librarianReturnLoan(req.body, req.currentUser.id);
@@ -102,4 +112,5 @@ module.exports = {
   returnLoan,
   librarianReturnLoan,
   payFine,
+  librarianPayFine,
 };

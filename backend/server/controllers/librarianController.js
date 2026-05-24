@@ -44,6 +44,32 @@ async function viewBooks(req, res, next) {
 }
 
 /**
+ * Barcode lookup for librarian checkout
+ * GET /api/librarian/barcodes/:code
+ */
+async function lookupBarcode(req, res, next) {
+  try {
+    const data = await librarianService.lookupBarcode(req.params.code);
+    sendSuccess(res, data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Fine Dashboard
+ * GET /api/librarian/fine-dashboard
+ */
+async function getFineDashboard(req, res, next) {
+  try {
+    const data = await librarianService.getFineDashboard();
+    sendSuccess(res, data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * L1.4 - Delete/Archive a book
  * DELETE /api/librarian/books/:id
  */
@@ -62,5 +88,7 @@ module.exports = {
   addBook,
   editBook,
   viewBooks,
+  lookupBarcode,
+  getFineDashboard,
   deleteBook,
 };

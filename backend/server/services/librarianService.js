@@ -5,6 +5,42 @@ const { formatDateTime } = require("../utils/date");
 // Valid genre and language values from Prisma schema
 const VALID_GENRES = ["Technology", "Fiction", "Science", "History", "Management"];
 const VALID_LANGUAGES = ["Chinese", "English", "Others"];
+const ACTIVE_LOAN_STATUSES = ["Borrowing", "Overdue"];
+
+function buildIsbnSearchConditions(keyword) {
+  const compactKeyword = keyword.replace(/[\s-]/g, "");
+  const conditions = [{ isbn: { contains: keyword } }];
+
+  if (compactKeyword && compactKeyword !== keyword) {
+    conditions.push({ isbn: { contains: compactKeyword } });
+  }
+
+  return conditions;
+}
+
+function normalizeBarcodeValue(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const withoutPrefix = raw.replace(/^(isbn|book|bookid|book-id)\s*[:#-]\s*/i, "").trim();
+
+  return {
+    raw,
+    normalized: withoutPrefix,
+    compact: withoutPrefix.replace(/[\s-]/g, ""),
+  };
+}
+
+async function syncOverdueLoans() {
+  await prisma.loan.updateMany({
+    where: {
+      status: "Borrowing",
+      returnDate: null,
+      dueDate: { lt: new Date() },
+    },
+    data: {
+      status: "Overdue",
+    },
+  });
+}
 
 /**
  * Add a new book (L1.1)
@@ -152,11 +188,29 @@ async function viewBooks(query) {
 
   // Keyword search
   if (query.keyword && typeof query.keyword === "string") {
-    where.OR = [
-      { title: { contains: query.keyword } },
-      { author: { contains: query.keyword } },
-      { isbn: { contains: query.keyword } },
-    ];
+    const keyword = query.keyword.trim();
+    const type = typeof query.type === "string" ? query.type.trim() : "";
+
+    if (!keyword) {
+      throw new AppError(400, "Invalid search keyword");
+    }
+
+    if (type && !["title", "author", "isbn"].includes(type)) {
+      throw new AppError(400, "Invalid search type");
+    }
+
+    where.OR =
+      type === "title"
+        ? [{ title: { contains: keyword } }]
+        : type === "author"
+          ? [{ author: { contains: keyword } }]
+          : type === "isbn"
+            ? buildIsbnSearchConditions(keyword)
+            : [
+                { title: { contains: keyword } },
+                { author: { contains: keyword } },
+                ...buildIsbnSearchConditions(keyword),
+              ];
   }
 
   // Genre filter
@@ -185,6 +239,109 @@ async function viewBooks(query) {
     page,
     size,
     list: books.map(toBookSummary),
+  };
+}
+
+/**
+ * Look up a book from a scanned barcode value.
+ *
+ * Barcode scanners usually submit plain text. In this project the barcode value
+ * is treated as either a Book ID or ISBN.
+ */
+async function lookupBarcode(code) {
+  const { raw, normalized, compact } = normalizeBarcodeValue(code);
+
+  if (!raw || !normalized) {
+    throw new AppError(400, "Barcode is required");
+  }
+
+  const isbnCandidates = Array.from(new Set([normalized, compact].filter(Boolean)));
+  const book = await prisma.book.findFirst({
+    where: {
+      OR: [
+        { id: normalized },
+        ...isbnCandidates.map((isbn) => ({ isbn })),
+      ],
+    },
+  });
+
+  if (!book) {
+    throw new AppError(404, "Book not found for this barcode");
+  }
+
+  return {
+    ...toBookDetail(book),
+    barcode: raw,
+    barcodeType: book.id === normalized ? "BOOK_ID" : "ISBN",
+  };
+}
+
+/**
+ * Fine Dashboard metrics for librarians.
+ */
+async function getFineDashboard() {
+  await syncOverdueLoans();
+
+  const unpaidFineWhere = {
+    fineAmount: { gt: 0 },
+    finePaid: false,
+    fineForgiven: false,
+  };
+
+  const [bookCopySummary, checkedOutBooks, overdueBooks, unpaidFineLoans] = await Promise.all([
+    prisma.book.aggregate({
+      _sum: {
+        availableCopies: true,
+      },
+    }),
+    prisma.loan.count({
+      where: {
+        status: {
+          in: ACTIVE_LOAN_STATUSES,
+        },
+      },
+    }),
+    prisma.loan.count({
+      where: {
+        status: "Overdue",
+      },
+    }),
+    prisma.loan.findMany({
+      where: unpaidFineWhere,
+      include: {
+        book: true,
+        user: true,
+      },
+      orderBy: [
+        { dueDate: "asc" },
+        { returnDate: "desc" },
+      ],
+    }),
+  ]);
+
+  const fineItems = unpaidFineLoans.map((loan) => ({
+    loanId: loan.id,
+    userId: loan.userId,
+    userName: loan.user?.name || "Unknown user",
+    userEmail: loan.user?.email || "-",
+    studentId: loan.user?.studentId || "-",
+    bookId: loan.bookId,
+    bookTitle: loan.book?.title || "This book is no longer available",
+    isbn: loan.book?.isbn || "-",
+    dueDate: formatDateTime(loan.dueDate),
+    returnDate: loan.returnDate ? formatDateTime(loan.returnDate) : null,
+    fineAmount: Number(loan.fineAmount),
+    status: loan.status,
+  }));
+
+  return {
+    booksInLibrary: bookCopySummary._sum.availableCopies || 0,
+    checkedOutBooks,
+    overdueBooks,
+    fineDueToday: fineItems.reduce((sum, item) => sum + item.fineAmount, 0),
+    fineItemCount: fineItems.length,
+    fineItems,
+    generatedAt: formatDateTime(new Date()),
   };
 }
 
@@ -274,5 +431,7 @@ module.exports = {
   addBook,
   editBook,
   viewBooks,
+  lookupBarcode,
+  getFineDashboard,
   deleteBook,
 };

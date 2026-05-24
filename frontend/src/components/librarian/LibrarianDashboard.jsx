@@ -2,6 +2,15 @@ import React, { useEffect, useState } from 'react'
 
 const API_BASE = '/api/librarian'
 const DEFAULT_STATS = { totalBooks: 0, availableBooks: 0, myLoans: 0, pendingHolds: 0 }
+const DEFAULT_FINE_DASHBOARD = {
+  booksInLibrary: 0,
+  checkedOutBooks: 0,
+  overdueBooks: 0,
+  fineDueToday: 0,
+  fineItemCount: 0,
+  fineItems: [],
+  generatedAt: ''
+}
 const GENRES = ['Technology', 'Fiction', 'Science', 'History', 'Management']
 const LANGUAGES = ['Chinese', 'English', 'Others']
 const HOLD_STATUSES = ['WAITING', 'READY', 'CANCELLED']
@@ -32,12 +41,19 @@ const LibrarianDashboard = ({
   const [loading, setLoading] = useState(false)
   const [loanLoading, setLoanLoading] = useState(false)
   const [holdLoading, setHoldLoading] = useState(false)
+  const [fineDashboardLoading, setFineDashboardLoading] = useState(false)
+  const [fineDashboard, setFineDashboard] = useState(DEFAULT_FINE_DASHBOARD)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [payingFineId, setPayingFineId] = useState('')
+  const [barcodeLookupLoading, setBarcodeLookupLoading] = useState(false)
+  const [barcodeBook, setBarcodeBook] = useState(null)
   const [returningLoanId, setReturningLoanId] = useState('')
   const [holdActionLoadingId, setHoldActionLoadingId] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchType, setSearchType] = useState('all')
+  const [activeSearchTerm, setActiveSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
@@ -52,6 +68,9 @@ const LibrarianDashboard = ({
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [alipayTarget, setAlipayTarget] = useState(null)
+  const [alipayForm, setAlipayForm] = useState({ authCode: '' })
+  const [alipayResult, setAlipayResult] = useState(null)
   const [returnTarget, setReturnTarget] = useState(null)
   const [readyTarget, setReadyTarget] = useState(null)
   const [cancelHoldTarget, setCancelHoldTarget] = useState(null)
@@ -167,8 +186,46 @@ const LibrarianDashboard = ({
   const refreshLoanManagement = async (options = {}) => {
     await Promise.all([
       fetchBooks(1, 50, options),
-      fetchLoanRecords(options)
+      fetchLoanRecords(options),
+      fetchFineDashboard(options)
     ])
+  }
+
+  const fetchFineDashboard = async (options = {}) => {
+    const { silent = false } = options
+
+    if (!silent) {
+      setFineDashboardLoading(true)
+    }
+
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE}/fine-dashboard`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await res.json()
+
+      if (result.code === 200) {
+        setFineDashboard({
+          ...DEFAULT_FINE_DASHBOARD,
+          ...result.data,
+          fineItems: result.data?.fineItems || []
+        })
+        setStats(prev => ({
+          ...prev,
+          availableBooks: result.data?.booksInLibrary ?? prev.availableBooks,
+          myLoans: result.data?.checkedOutBooks ?? prev.myLoans
+        }))
+      } else {
+        notify('error', result.message || 'Failed to fetch fine dashboard')
+      }
+    } catch (err) {
+      notify('error', 'Network error: ' + err.message)
+    } finally {
+      if (!silent) {
+        setFineDashboardLoading(false)
+      }
+    }
   }
 
   const fetchHoldRecords = async (options = {}) => {
@@ -216,19 +273,26 @@ const LibrarianDashboard = ({
 
     if (!searchKeyword.trim()) {
       setSearchResults([])
+      setActiveSearchTerm('')
       return
     }
 
     setIsSearching(true)
     try {
       const token = getToken()
-      const res = await fetch(`${API_BASE}/books?keyword=${encodeURIComponent(searchKeyword.trim())}`, {
+      const params = new URLSearchParams({ keyword: searchKeyword.trim() })
+      if (searchType !== 'all') {
+        params.set('type', searchType)
+      }
+
+      const res = await fetch(`${API_BASE}/books?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       const result = await res.json()
 
       if (result.code === 200) {
         setSearchResults(result.data.list || [])
+        setActiveSearchTerm(searchKeyword.trim())
       } else {
         notify('error', result.message || 'Search failed')
       }
@@ -248,6 +312,15 @@ const LibrarianDashboard = ({
 
   useEffect(() => {
     const loadPageData = async () => {
+      if (currentPage === 'dashboard') {
+        await Promise.all([
+          fetchBooks(1, 50),
+          fetchLoanRecords({ silent: true }),
+          fetchFineDashboard()
+        ])
+        return
+      }
+
       if (currentPage === 'loans-manage') {
         await refreshLoanManagement()
         return
@@ -415,6 +488,7 @@ const LibrarianDashboard = ({
         )
         setCheckoutForm({ userId: '', bookIdentifier: '' })
         setCheckoutErrors({})
+        setBarcodeBook(null)
         await refreshLoanManagement({ silent: true })
       } else {
         notify('error', result.message || 'Checkout failed')
@@ -423,6 +497,102 @@ const LibrarianDashboard = ({
       notify('error', 'Network error: ' + err.message)
     } finally {
       setCheckoutLoading(false)
+    }
+  }
+
+  const handleBarcodeLookup = async () => {
+    const barcode = checkoutForm.bookIdentifier.trim()
+
+    if (!barcode) {
+      setCheckoutErrors(prev => ({ ...prev, bookIdentifier: 'Barcode, ISBN, or book ID is required' }))
+      setBarcodeBook(null)
+      return
+    }
+
+    setBarcodeLookupLoading(true)
+    setCheckoutErrors(prev => ({ ...prev, bookIdentifier: '' }))
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE}/barcodes/${encodeURIComponent(barcode)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await res.json()
+
+      if (result.code === 200) {
+        setBarcodeBook(result.data)
+        notify('success', `Barcode matched: ${result.data.title}`)
+      } else {
+        setBarcodeBook(null)
+        notify('error', result.message || 'No book matched this barcode')
+      }
+    } catch (err) {
+      setBarcodeBook(null)
+      notify('error', 'Network error: ' + err.message)
+    } finally {
+      setBarcodeLookupLoading(false)
+    }
+  }
+
+  const openAlipayModal = (item) => {
+    setAlipayTarget(item)
+    setAlipayForm({ authCode: '' })
+    setAlipayResult(null)
+  }
+
+  const closeAlipayModal = () => {
+    if (payingFineId) {
+      return
+    }
+
+    setAlipayTarget(null)
+    setAlipayForm({ authCode: '' })
+    setAlipayResult(null)
+  }
+
+  const handleAlipayFine = async (e) => {
+    e.preventDefault()
+
+    if (!alipayTarget) {
+      return
+    }
+
+    const authCode = alipayForm.authCode.trim()
+    if (!/^28\d{14,22}$/.test(authCode)) {
+      notify('error', 'Enter a valid simulated Alipay payment code starting with 28.')
+      return
+    }
+
+    setPayingFineId(alipayTarget.loanId)
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE}/loans/${alipayTarget.loanId}/pay-fine`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          amount: alipayTarget.fineAmount,
+          method: 'ALIPAY',
+          authCode
+        })
+      })
+      const result = await res.json()
+
+      if (result.code === 200) {
+        setAlipayResult(result.data)
+        notify('success', `Alipay payment received for ${alipayTarget.userName}: ${formatMoney(alipayTarget.fineAmount)}.`)
+        await Promise.all([
+          fetchFineDashboard({ silent: true }),
+          fetchLoanRecords({ silent: true })
+        ])
+      } else {
+        notify('error', result.message || 'Alipay payment failed')
+      }
+    } catch (err) {
+      notify('error', 'Network error: ' + err.message)
+    } finally {
+      setPayingFineId('')
     }
   }
 
@@ -655,6 +825,135 @@ const LibrarianDashboard = ({
     </>
   )
 
+  const renderFineDashboardPanel = () => (
+    <div className="fine-dashboard-panel">
+      <div className="fine-dashboard-header">
+        <div>
+          <h3>Today&apos;s Fine Collection</h3>
+          <p>Unpaid fines that need attention from the circulation desk.</p>
+        </div>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={fineDashboardLoading}
+          onClick={() => fetchFineDashboard()}
+        >
+          {fineDashboardLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      <div className="fine-collection-table">
+        <div className="fine-table-title">
+          <h4>Collection List</h4>
+          <span>{fineDashboard.fineItemCount} unpaid</span>
+        </div>
+
+        {fineDashboardLoading ? (
+          <div className="fine-empty-state">Loading fine dashboard...</div>
+        ) : fineDashboard.fineItems.length > 0 ? (
+          <div className="loan-table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Borrower</th>
+                  <th>Book</th>
+                  <th>ISBN</th>
+                  <th>Due Date</th>
+                  <th>Returned</th>
+                  <th>Fine</th>
+                  <th>Payment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fineDashboard.fineItems.map((item) => (
+                  <tr key={item.loanId}>
+                    <td>
+                      <div className="loan-record-title">{item.userName}</div>
+                      <div className="loan-record-meta">{item.userEmail}</div>
+                    </td>
+                    <td>{item.bookTitle}</td>
+                    <td>{item.isbn}</td>
+                    <td>{formatDateLabel(item.dueDate)}</td>
+                    <td>{formatDateLabel(item.returnDate)}</td>
+                    <td className="fine-amount-cell">{formatMoney(item.fineAmount)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-sm btn-alipay"
+                        disabled={payingFineId === item.loanId}
+                        onClick={() => openAlipayModal(item)}
+                      >
+                        Alipay
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="fine-empty-state">No unpaid fines to collect today.</div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderAlipayModal = () => (
+    <div className="modal-overlay" onClick={closeAlipayModal}>
+      <div className="modal-content modal-small" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Alipay Fine Payment</h3>
+          <button className="modal-close" onClick={closeAlipayModal}>×</button>
+        </div>
+        <form onSubmit={handleAlipayFine} noValidate>
+          <div className="modal-body">
+            <div className="alipay-ticket">
+              <span>Amount</span>
+              <strong>{formatMoney(alipayTarget?.fineAmount)}</strong>
+              <p>Order: FINE-{alipayTarget?.loanId}</p>
+            </div>
+
+            <p className="book-title-highlight">{alipayTarget?.bookTitle}</p>
+            <div className="return-confirm-detail">Borrower: {alipayTarget?.userName}</div>
+            <div className="return-confirm-detail">ISBN: {alipayTarget?.isbn}</div>
+            <div className="return-confirm-detail">Due Date: {formatDateLabel(alipayTarget?.dueDate)}</div>
+
+            {!alipayResult ? (
+              <div className="form-group alipay-code-field">
+                <label>Alipay Payment Code *</label>
+                <input
+                  type="text"
+                  value={alipayForm.authCode}
+                  onChange={(e) => setAlipayForm({ authCode: e.target.value })}
+                  placeholder="Scan or enter a code starting with 28"
+                />
+                <div className="loan-form-hint">
+                  Sandbox example: 281234567890123456
+                </div>
+              </div>
+            ) : (
+              <div className="alipay-success-box">
+                <strong>Payment successful</strong>
+                <p>Alipay Trade No: {alipayResult.alipayTradeNo}</p>
+                <p>Out Trade No: {alipayResult.outTradeNo}</p>
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={closeAlipayModal}>
+              {alipayResult ? 'Close' : 'Cancel'}
+            </button>
+            {!alipayResult && (
+              <button className="btn-alipay btn-sm" type="submit" disabled={payingFineId === alipayTarget?.loanId}>
+                {payingFineId === alipayTarget?.loanId ? 'Processing...' : 'Confirm Alipay'}
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+
   const renderDashboard = () => (
     <div className="content">
       <div className="welcome-banner">
@@ -671,32 +970,35 @@ const LibrarianDashboard = ({
         <div className="stat-card">
           <div className="stat-icon blue">📖</div>
           <div className="stat-content">
-            <h3>{stats.totalBooks}</h3>
-            <p>Total Books</p>
+            <h3>{fineDashboard.booksInLibrary}</h3>
+            <p>Books in Library</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green">✅</div>
           <div className="stat-content">
-            <h3>{stats.availableBooks}</h3>
-            <p>Available</p>
+            <h3>{fineDashboard.checkedOutBooks}</h3>
+            <p>Checked Out</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon orange">📋</div>
           <div className="stat-content">
-            <h3>{stats.myLoans}</h3>
-            <p>Active Loans</p>
+            <h3>{formatMoney(fineDashboard.fineDueToday)}</h3>
+            <p>Fine Due Today</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon red">🕒</div>
           <div className="stat-content">
-            <h3>{loanRecords.filter(loan => loan.status === 'Overdue').length}</h3>
-            <p>Overdue Loans</p>
+            <h3>{fineDashboard.overdueBooks}</h3>
+            <p>Overdue Books</p>
           </div>
         </div>
       </div>
+
+      {renderFineDashboardPanel()}
+      {alipayTarget && renderAlipayModal()}
 
       <div className="quick-actions">
         <h3>Quick Actions</h3>
@@ -743,7 +1045,8 @@ const LibrarianDashboard = ({
 
   // Render Books view with search
   const renderBooks = () => {
-    const displayBooks = searchResults.length > 0 ? searchResults : books
+    const isSearchMode = Boolean(activeSearchTerm)
+    const displayBooks = isSearchMode ? searchResults : books
 
     return (
       <div className="content">
@@ -754,10 +1057,21 @@ const LibrarianDashboard = ({
         {/* Search Box */}
         <div className="search-section">
           <form onSubmit={handleSearch} className="search-form">
+            <select
+              className="search-select"
+              value={searchType}
+              onChange={(e) => setSearchType(e.target.value)}
+              aria-label="Search type"
+            >
+              <option value="all">All Fields</option>
+              <option value="title">Title</option>
+              <option value="author">Author</option>
+              <option value="isbn">ISBN</option>
+            </select>
             <input
               type="text"
               className="search-input"
-              placeholder="Search by title, author, or ISBN..."
+              placeholder={searchType === 'isbn' ? 'Enter ISBN...' : 'Search by title, author, or ISBN...'}
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
             />
@@ -770,6 +1084,7 @@ const LibrarianDashboard = ({
                 className="btn-secondary"
                 onClick={() => {
                   setSearchKeyword('')
+                  setActiveSearchTerm('')
                   setSearchResults([])
                 }}
               >
@@ -804,7 +1119,7 @@ const LibrarianDashboard = ({
         </div>
         {displayBooks.length === 0 && !loading && (
           <div className="no-data">
-            {searchKeyword ? 'No books found matching your search' : 'No books found'}
+            {isSearchMode ? `No books found for "${activeSearchTerm}"` : 'No books found'}
           </div>
         )}
       </div>
@@ -936,23 +1251,48 @@ const LibrarianDashboard = ({
             </div>
 
             <div className="form-group">
-              <label>Book ISBN / Book ID *</label>
-              <input
-                type="text"
-                value={checkoutForm.bookIdentifier}
-                onChange={(e) => {
-                  setCheckoutForm(prev => ({ ...prev, bookIdentifier: e.target.value }))
-                  setCheckoutErrors(prev => ({ ...prev, bookIdentifier: '' }))
-                }}
-                placeholder="Enter ISBN or book ID"
-              />
+              <label>Barcode / ISBN / Book ID *</label>
+              <div className="barcode-input-row">
+                <input
+                  type="text"
+                  value={checkoutForm.bookIdentifier}
+                  onChange={(e) => {
+                    setCheckoutForm(prev => ({ ...prev, bookIdentifier: e.target.value }))
+                    setCheckoutErrors(prev => ({ ...prev, bookIdentifier: '' }))
+                    setBarcodeBook(null)
+                  }}
+                  placeholder="Scan barcode, ISBN, or book ID"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={barcodeLookupLoading || checkoutLoading}
+                  onClick={handleBarcodeLookup}
+                >
+                  {barcodeLookupLoading ? 'Looking up...' : 'Lookup'}
+                </button>
+              </div>
               {checkoutErrors.bookIdentifier && (
                 <div className="field-error">{checkoutErrors.bookIdentifier}</div>
               )}
             </div>
 
+            {barcodeBook && (
+              <div className={`barcode-result ${barcodeBook.available ? 'available' : 'unavailable'}`}>
+                <div>
+                  <span className="barcode-result-label">Matched Book</span>
+                  <strong>{barcodeBook.title}</strong>
+                  <p>{barcodeBook.author} · ISBN: {barcodeBook.isbn}</p>
+                  <p>Location: {barcodeBook.shelfLocation || 'N/A'} · Copies: {barcodeBook.availableCopies}</p>
+                </div>
+                <span className={`status-badge ${barcodeBook.available ? 'success' : 'danger'}`}>
+                  {barcodeBook.available ? 'Available' : 'Unavailable'}
+                </span>
+              </div>
+            )}
+
             <p className="loan-form-hint">
-              The system validates the borrower, checks inventory, and blocks checkout when unpaid fines exist.
+              Scan with a hardware barcode scanner or type the ISBN/book ID, then look it up before checkout.
             </p>
 
             <div className="loan-actions-row">
@@ -966,6 +1306,7 @@ const LibrarianDashboard = ({
                 onClick={() => {
                   setCheckoutForm({ userId: '', bookIdentifier: '' })
                   setCheckoutErrors({})
+                  setBarcodeBook(null)
                 }}
               >
                 Reset

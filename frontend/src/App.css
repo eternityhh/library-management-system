@@ -392,6 +392,134 @@ body {
   color: #718096;
 }
 
+/* Fine Dashboard */
+.fine-dashboard-panel {
+  background: white;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.fine-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.fine-dashboard-header h3 {
+  font-size: 18px;
+  color: #1a202c;
+  margin-bottom: 6px;
+}
+
+.fine-dashboard-header p {
+  color: #718096;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fine-table-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.fine-table-title h4 {
+  color: #2d3748;
+  font-size: 16px;
+}
+
+.fine-table-title span {
+  color: #718096;
+  font-size: 12px;
+}
+
+.fine-amount-cell {
+  color: #c53030;
+  font-weight: 700;
+}
+
+.btn-alipay {
+  background: #1677ff;
+  color: white;
+}
+
+.btn-alipay:hover {
+  background: #0f5fcf;
+  transform: translateY(-1px);
+}
+
+.btn-alipay:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.alipay-ticket {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.alipay-ticket span {
+  display: block;
+  margin-bottom: 4px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.alipay-ticket strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #1a202c;
+  font-size: 28px;
+}
+
+.alipay-ticket p,
+.alipay-success-box p {
+  margin: 4px 0;
+  color: #4a5568;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.alipay-code-field {
+  margin-top: 16px;
+}
+
+.alipay-success-box {
+  padding: 14px 16px;
+  margin-top: 16px;
+  border: 1px solid #c6f6d5;
+  border-radius: 12px;
+  background: #f0fff4;
+}
+
+.alipay-success-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #276749;
+}
+
+.fine-empty-state {
+  padding: 20px;
+  background: #f7fafc;
+  border: 1px dashed #cbd5e0;
+  border-radius: 12px;
+  color: #718096;
+  font-size: 14px;
+  text-align: center;
+}
+
 /* 快速操作 */
 .quick-actions {
   background: white;
@@ -1496,6 +1624,59 @@ body {
   gap: 12px;
 }
 
+.barcode-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.barcode-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  margin: 6px 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f7fafc;
+}
+
+.barcode-result.available {
+  border-color: #c6f6d5;
+  background: #f0fff4;
+}
+
+.barcode-result.unavailable {
+  border-color: #fed7d7;
+  background: #fff5f5;
+}
+
+.barcode-result-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #718096;
+}
+
+.barcode-result strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #1a202c;
+  font-size: 15px;
+}
+
+.barcode-result p {
+  margin: 3px 0;
+  color: #4a5568;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .field-error {
   margin-top: 6px;
   font-size: 12px;
@@ -1691,6 +1872,7 @@ body {
 
   .form-row,
   .hold-detail-grid,
+  .barcode-input-row,
   .loan-metric-grid {
     grid-template-columns: 1fr;
   }
@@ -1735,7 +1917,14 @@ body {
     gap: 16px;
   }
 
+  .fine-dashboard-header,
+  .fine-table-title {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .table-section,
+  .fine-dashboard-panel,
   .search-section,
   .management-section,
   .hold-management-panel,

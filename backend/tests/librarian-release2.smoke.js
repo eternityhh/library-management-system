@@ -136,6 +136,64 @@ async function main() {
   assert.equal(librarianLogin.response.status, 200);
   librarianToken = librarianLogin.body.data.token;
 
+  const isbnSearch = await request(
+    `/api/librarian/books?keyword=${encodeURIComponent(checkoutBook.isbn)}&type=isbn`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(isbnSearch.response.status, 200);
+  assert.equal(isbnSearch.body.data.total, 1);
+  assert.equal(isbnSearch.body.data.list[0].id, checkoutBook.id);
+
+  const isbnSearchMiss = await request(
+    `/api/librarian/books?keyword=${encodeURIComponent(`missing-isbn-${uniqueSuffix}`)}&type=isbn`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(isbnSearchMiss.response.status, 200);
+  assert.equal(isbnSearchMiss.body.data.total, 0);
+  assert.deepEqual(isbnSearchMiss.body.data.list, []);
+
+  const barcodeLookupByIsbn = await request(
+    `/api/librarian/barcodes/${encodeURIComponent(checkoutBook.isbn)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(barcodeLookupByIsbn.response.status, 200);
+  assert.equal(barcodeLookupByIsbn.body.data.id, checkoutBook.id);
+  assert.equal(barcodeLookupByIsbn.body.data.barcodeType, "ISBN");
+
+  const barcodeLookupByBookId = await request(
+    `/api/librarian/barcodes/${encodeURIComponent(`book:${checkoutBook.id}`)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(barcodeLookupByBookId.response.status, 200);
+  assert.equal(barcodeLookupByBookId.body.data.id, checkoutBook.id);
+  assert.equal(barcodeLookupByBookId.body.data.barcodeType, "BOOK_ID");
+
+  const barcodeLookupMiss = await request(
+    `/api/librarian/barcodes/${encodeURIComponent(`missing-barcode-${uniqueSuffix}`)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(barcodeLookupMiss.response.status, 404);
+
   const invalidUserCheckout = await request("/api/librarian/loans/checkout", {
     method: "POST",
     headers: {
@@ -282,6 +340,23 @@ async function main() {
   assert.equal(overdueReturn.response.status, 200);
   assert.equal(overdueReturn.body.data.fineAmount, 5);
 
+  const fineDashboard = await request("/api/librarian/fine-dashboard", {
+    headers: {
+      Authorization: `Bearer ${librarianToken}`,
+    },
+  });
+  assert.equal(fineDashboard.response.status, 200);
+  assert.ok(fineDashboard.body.data.booksInLibrary >= 2);
+  assert.ok(fineDashboard.body.data.fineDueToday >= 5);
+  assert.ok(
+    fineDashboard.body.data.fineItems.some(
+      (item) =>
+        item.loanId === fineLoanId &&
+        item.userId === borrowerId &&
+        item.fineAmount === 5,
+    ),
+  );
+
   const blockedCheckout = await request("/api/librarian/loans/checkout", {
     method: "POST",
     headers: {
@@ -295,6 +370,68 @@ async function main() {
   });
   assert.equal(blockedCheckout.response.status, 400);
   assert.equal(blockedCheckout.body.message, "User has unpaid fines");
+
+  const alipayFine = await request(`/api/librarian/loans/${fineLoanId}/pay-fine`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${librarianToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      amount: 5,
+      method: "ALIPAY",
+      authCode: "281234567890123456",
+    }),
+  });
+  assert.equal(alipayFine.response.status, 200);
+  assert.equal(alipayFine.body.message, "Fine paid successfully via Alipay");
+  assert.equal(alipayFine.body.data.finePaid, true);
+  assert.equal(alipayFine.body.data.paymentMethod, "ALIPAY");
+  assert.ok(alipayFine.body.data.outTradeNo.startsWith("FINE-"));
+  assert.ok(alipayFine.body.data.alipayTradeNo.startsWith("ALI"));
+
+  const paidFineLoan = await prisma.loan.findUnique({
+    where: { id: fineLoanId },
+  });
+  assert.equal(paidFineLoan.finePaid, true);
+
+  const alipayAuditLog = await prisma.auditLog.findFirst({
+    where: {
+      userId: librarianLogin.body.data.userId,
+      action: "PAY_FINE",
+      entity: "Loan",
+      entityId: fineLoanId,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+  assert.ok(alipayAuditLog);
+  assert.equal(JSON.parse(alipayAuditLog.detail).method, "ALIPAY");
+
+  const fineDashboardAfterAlipay = await request("/api/librarian/fine-dashboard", {
+    headers: {
+      Authorization: `Bearer ${librarianToken}`,
+    },
+  });
+  assert.equal(fineDashboardAfterAlipay.response.status, 200);
+  assert.ok(
+    !fineDashboardAfterAlipay.body.data.fineItems.some((item) => item.loanId === fineLoanId),
+  );
+
+  const checkoutAfterAlipay = await request("/api/librarian/loans/checkout", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${librarianToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userId: borrowerId,
+      bookId: checkoutBook.id,
+    }),
+  });
+  assert.equal(checkoutAfterAlipay.response.status, 200);
+  createdLoanIds.push(checkoutAfterAlipay.body.data.loanId);
 
   console.log("Librarian Release2 smoke test passed.");
 }
