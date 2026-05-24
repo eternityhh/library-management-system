@@ -2,6 +2,7 @@ const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { formatDateTime } = require("../utils/date");
 const notificationService = require("./notificationService");
+const auditLogService = require("./auditLogService");
 
 const HOLD_STATUS_FILTERS = ["WAITING", "READY", "CANCELLED"];
 const CANCELLABLE_HOLD_STATUSES = ["WAITING", "READY"];
@@ -95,16 +96,25 @@ async function createHold(userId, bookId) {
     throw new AppError(400, "This book is currently available; please borrow it directly, or you have already reserved it");
   }
 
-  const newHold = await prisma.hold.create({
-    data: {
-      userId,
+  const newHold = await prisma.$transaction(async (tx) => {
+    const record = await tx.hold.create({
+      data: {
+        userId,
+        bookId,
+        status: "WAITING",
+      },
+      include: {
+        book: true,
+        user: true,
+      },
+    });
+
+    await auditLogService.recordWithClient(tx, userId, "CREATE_HOLD", "Hold", record.id, {
       bookId,
-      status: "WAITING",
-    },
-    include: {
-      book: true,
-      user: true,
-    },
+      status: record.status,
+    });
+
+    return record;
   });
 
   return toHoldRecord(newHold);
@@ -259,18 +269,10 @@ async function markHoldReady(holdId, librarianId) {
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId: librarianId,
-        action: "MARK_HOLD_READY",
-        entity: "Hold",
-        entityId: holdId,
-        detail: JSON.stringify({
-          bookId: hold.bookId,
-          userId: hold.userId,
-          readyAt: readyAt.toISOString(),
-        }),
-      },
+    await auditLogService.recordWithClient(tx, librarianId, "MARK_HOLD_READY", "Hold", holdId, {
+      bookId: hold.bookId,
+      userId: hold.userId,
+      readyAt: readyAt.toISOString(),
     });
 
     return record;
@@ -315,19 +317,11 @@ async function performHoldCancellation(hold, actorUserId, action) {
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId: actorUserId,
-        action,
-        entity: "Hold",
-        entityId: hold.id,
-        detail: JSON.stringify({
-          bookId: hold.bookId,
-          userId: hold.userId,
-          previousStatus: hold.status,
-          inventoryReleased: shouldReleaseInventory,
-        }),
-      },
+    await auditLogService.recordWithClient(tx, actorUserId, action, "Hold", hold.id, {
+      bookId: hold.bookId,
+      userId: hold.userId,
+      previousStatus: hold.status,
+      inventoryReleased: shouldReleaseInventory,
     });
 
     return record;

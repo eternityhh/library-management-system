@@ -12,7 +12,7 @@ async function register(req, res, next) {
 
 async function login(req, res, next) {
   try {
-    const data = await authService.login(req.body);
+    const data = await authService.login(req.body, res);
     sendSuccess(res, data, "Login successful");
   } catch (error) {
     next(error);

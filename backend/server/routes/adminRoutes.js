@@ -1,5 +1,4 @@
 const express = require("express");
-
 const { requireAuth } = require("../middleware/auth");
 const { requireAdmin } = require("../middleware/role");
 

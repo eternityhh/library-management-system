@@ -130,13 +130,45 @@ function App() {
               <span className="icon">🏠</span>
               <span>Home</span>
             </div>
+            <div className={`menu-item ${currentPage === 'announcements' ? 'active' : ''}`} onClick={() => setCurrentPage('announcements')}>
+              <span className="icon">📢</span>
+              <span>Announcements</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'new-books' ? 'active' : ''}`} onClick={() => setCurrentPage('new-books')}>
+              <span className="icon">✨</span>
+              <span>New Arrivals</span>
+            </div>
             <div className={`menu-item ${currentPage === 'books' ? 'active' : ''}`} onClick={() => setCurrentPage('books')}>
               <span className="icon">📖</span>
               <span>Books</span>
             </div>
+            <div className={`menu-item ${currentPage === 'ranking' ? 'active' : ''}`} onClick={() => setCurrentPage('ranking')}>
+              <span className="icon">🏆</span>
+              <span>Leaderboard</span>
+            </div>
             <div className={`menu-item ${currentPage === 'loans' ? 'active' : ''}`} onClick={() => setCurrentPage('loans')}>
               <span className="icon">📋</span>
               <span>My Loans</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'holds' ? 'active' : ''}`} onClick={() => setCurrentPage('holds')}>
+              <span className="icon">⏳</span>
+              <span>My Holds</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'return' ? 'active' : ''}`} onClick={() => setCurrentPage('return')}>
+              <span className="icon">↩️</span>
+              <span>Return Book</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'wishlist' ? 'active' : ''}`} onClick={() => setCurrentPage('wishlist')}>
+              <span className="icon">❤️</span>
+              <span>Wishlist</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'fines' ? 'active' : ''}`} onClick={() => setCurrentPage('fines')}>
+              <span className="icon">💰</span>
+              <span>Pay Fines</span>
+            </div>
+            <div className={`menu-item ${currentPage === 'recommend' ? 'active' : ''}`} onClick={() => setCurrentPage('recommend')}>
+              <span className="icon">💡</span>
+              <span>Recommend Book</span>
             </div>
             <div className={`menu-item ${currentPage === 'profile' ? 'active' : ''}`} onClick={() => setCurrentPage('profile')}>
               <span className="icon">👤</span>
@@ -156,7 +188,15 @@ function App() {
         {/* Main Content */}
         <main className="main-content">
           <header className="top-nav">
-            <span className="breadcrumb">Home / {getPageName(currentPage)}</span>
+            <span className="breadcrumb">
+              <span 
+                onClick={() => setCurrentPage('dashboard')} 
+                style={{ cursor: 'pointer', color: '#007bff' }}
+              >
+                {getPageName('dashboard')}
+              </span> 
+              / {getPageName(currentPage)}
+            </span>
             <div className="top-user">
               <span className="top-user-name">{user.name}</span>
               <span className="role-badge">{getRoleName(user.role)}</span>
@@ -204,6 +244,10 @@ function App() {
               <span className="icon">🗂️</span>
               <span>Hold Management</span>
             </div>
+            <div className={`menu-item ${currentPage === 'scanner' ? 'active' : ''}`} onClick={() => setCurrentPage('scanner')}>
+              <span className="icon">📷</span>
+              <span>Book Scanner</span>
+            </div>
           </nav>
           <div className="user-info">
             <div className="user-avatar">{user.name[0].toUpperCase()}</div>
@@ -218,7 +262,15 @@ function App() {
         {/* Main Content */}
         <main className="main-content">
           <header className="top-nav">
-            <span className="breadcrumb">Home / {getPageName(currentPage)}</span>
+            <span className="breadcrumb">
+              <span 
+                onClick={() => setCurrentPage('dashboard')} 
+                style={{ cursor: 'pointer', color: '#007bff' }}
+              >
+                {getPageName('dashboard')}
+              </span> 
+              / {getPageName(currentPage)}
+            </span>
             <div className="top-user">
               <span className="top-user-name">{user.name}</span>
               <span className="role-badge">{getRoleName(user.role)}</span>
@@ -265,10 +317,19 @@ function getPageName(page) {
     'dashboard': 'Dashboard',
     'books': 'Books',
     'loans': 'My Loans',
+    'holds': 'My Holds',
+    'wishlist': 'Wishlist',
+    'fines': 'Pay Fines',
+    'return': 'Return Book',
     'profile': 'My Profile',
     'manage': 'Manage Books',
     'loans-manage': 'Loan Management',
-    'holds-manage': 'Hold Management'
+    'holds-manage': 'Hold Management',
+    'scanner': 'Book Scanner',
+    'announcements': 'System Announcements',
+    'new-books': 'New Arrivals',
+    'recommend': 'Recommend Book',
+    'ranking': 'Borrowing Leaderboard'
   }
   return names[page] || 'Unknown'
 }

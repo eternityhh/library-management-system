@@ -29,6 +29,12 @@ router.put("/books/:id", librarianController.editBook);
 // L1.4 - Delete/Archive a book
 router.delete("/books/:id", librarianController.deleteBook);
 
+// L2.4 - Scan book by ISBN/barcode
+router.get("/books/scan", librarianController.scanBook);
+
+// L2.5 - Lookup book info from external API
+router.get("/books/lookup", librarianController.lookupBook);
+
 // L2.1/L2.2 - Loan management
 router.get("/loans", loanController.getLibrarianLoans);
 router.post("/loans/checkout", loanController.librarianCheckoutLoan);

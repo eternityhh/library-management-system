@@ -343,18 +343,84 @@ async function main() {
 
   console.log(`Seeded books: ${books.count}`);
 
+  const createdBooks = await prisma.book.findMany({
+    select: {
+      id: true,
+      isbn: true,
+      shelfLocation: true,
+      availableCopies: true,
+    },
+  });
+
+  const bookCopiesData = createdBooks.flatMap((book) =>
+    Array.from({ length: book.availableCopies }, (_, index) => ({
+      bookId: book.id,
+      barcode: `${book.isbn}-${String(index + 1).padStart(3, "0")}`,
+      shelfLocation: book.shelfLocation,
+      available: true,
+    })),
+  );
+
+  if (bookCopiesData.length > 0) {
+    const copies = await prisma.bookCopy.createMany({
+      data: bookCopiesData,
+      // skipDuplicates: true,
+    });
+
+    console.log(`Seeded book copies: ${copies.count}`);
+  }
+
   const config = await prisma.config.upsert({
-    where: { key: "FINE_RATE_PER_DAY" },
+    where: { key: "FINE_DAILY_RATE" },
     update: {
-      value: "0.50",
+      value: "1.00",
     },
     create: {
-      key: "FINE_RATE_PER_DAY",
-      value: "0.50",
+      key: "FINE_DAILY_RATE",
+      value: "1.00",
     },
   });
 
   console.log("Seeded config:", config);
+
+  const announcementsData = [
+  {
+    title: "Library Spring Festival Closure Notice",
+    content: "Dear readers,\n\nDuring the Spring Festival (February 10 - February 17), the library will be closed and all borrowing services suspended. Normal operations will resume on February 18.\n\nWe apologize for any inconvenience caused.\n\nLibrary Management Office",
+    type: "CLOSURE",
+    publishedAt: new Date("2026-02-05T10:00:00Z"),
+  },
+  {
+    title: "New Book Recommendation Event",
+    content: "This month, over 50 new technology books have been added, including popular titles such as 'Introduction to Artificial Intelligence' and 'Deep Learning in Action'. Readers are welcome to borrow!\n\nLocation: First floor hall\nTime: March 1 - March 31",
+    type: "ACTIVITY",
+    publishedAt: new Date("2026-03-01T09:00:00Z"),
+  },
+  {
+    title: "Notification of Borrowing Rule Adjustment",
+    content: "Effective April 1, 2026, the loan period for books will be extended from 30 days to 45 days. The renewal limit remains once.\n\nThe overdue fine remains unchanged: 0.5 yuan per day.\n\nPlease arrange your borrowing schedule accordingly.",
+    type: "RULE_CHANGE",
+    publishedAt: new Date("2026-03-25T14:30:00Z"),
+  },
+  {
+    title: "Weekend Opening Hours Adjustment",
+    content: "To facilitate readers' weekend reading, starting from April, the library's weekend opening hours will be adjusted as follows:\n\nSaturday: 9:00-21:00\nSunday: 9:00-18:00\n\nWeekday opening hours remain unchanged: 8:00-22:00",
+    type: "TIME_CHANGE",
+    publishedAt: new Date("2026-03-28T16:00:00Z"),
+  },
+  {
+    title: "Reading Sharing Session Invitation",
+    content: "The library will hold a reading sharing session on April 15. Theme: 'The Integration of Technology and Humanities'.\n\nSpecial guest: Professor Zhang (Department of Computer Science)\nLocation: Third floor lecture hall\nTime: 14:00-16:00\n\nInterested readers are welcome to sign up!",
+    type: "ACTIVITY",
+    publishedAt: new Date("2026-04-01T10:00:00Z"),
+  },
+];
+
+  const announcements = await prisma.announcement.createMany({
+    data: announcementsData,
+  });
+
+  console.log(`Seeded announcements: ${announcements.count}`);
 }
 
 main()

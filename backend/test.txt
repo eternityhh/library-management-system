@@ -1,0 +1,13 @@
+n = input()
+
+current = 1
+
+while True:
+    for j in range(i):
+        print(current,end=' ')
+        curent += 1
+        if current > n:
+            exit()
+    
+    print()
+    i += 1

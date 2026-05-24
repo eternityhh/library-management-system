@@ -1,6 +1,7 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
 const { toUserProfile } = require("./authService");
+const auditLogService = require("./auditLogService");
 
 async function getCurrentUser(userId) {
   const user = await prisma.user.findUnique({
@@ -19,6 +20,14 @@ async function updateCurrentUser(userId, payload) {
 
   if (name === undefined && studentId === undefined) {
     throw new AppError(400, "Invalid parameters");
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!existingUser) {
+    throw new AppError(404, "User not found");
   }
 
   if (studentId) {
@@ -41,6 +50,24 @@ async function updateCurrentUser(userId, payload) {
       ...(studentId !== undefined ? { studentId } : {}),
     },
   });
+
+  const auditDetail = {};
+  if (existingUser.name !== user.name) {
+    auditDetail.oldName = existingUser.name;
+    auditDetail.newName = user.name;
+  }
+  if (existingUser.studentId !== user.studentId) {
+    auditDetail.oldStudentId = existingUser.studentId;
+    auditDetail.newStudentId = user.studentId;
+  }
+
+  await auditLogService.record(
+    userId,
+    "USER_UPDATE_PROFILE",
+    "User",
+    userId,
+    Object.keys(auditDetail).length ? auditDetail : null,
+  );
 
   return toUserProfile(user);
 }

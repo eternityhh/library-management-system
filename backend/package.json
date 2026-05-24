@@ -7,6 +7,7 @@
     "test": "npm run test:smoke && npm run test:admin && npm run test:librarian-release2 && npm run test:librarian-hold-release2",
     "test:smoke": "node tests/reader-release1.smoke.js",
     "test:admin": "node tests/admin-release1.smoke.js",
+    "test:admin:r2": "node tests/admin-release2.smoke.js",
     "test:librarian-release2": "node tests/librarian-release2.smoke.js",
     "test:librarian-hold-release2": "node tests/librarian-hold-release2.smoke.js",
     "dev": "nodemon index.js",
@@ -23,10 +24,12 @@
     "@prisma/adapter-libsql": "^7.4.2",
     "@prisma/client": "^7.4.2",
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "prisma": "^7.4.2"
+    "prisma": "^7.4.2",
+    "puppeteer": "^24.5.0"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

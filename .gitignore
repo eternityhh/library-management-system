@@ -40,3 +40,5 @@ pnpm-debug.log*
 *.suo
 *.swp
 *.tmp
+# test
+backend/tests/

@@ -1,10 +1,16 @@
 const prisma = require("../db/prisma");
 const { AppError } = require("../lib/errors");
-const { formatDateTime, addDays } = require("../utils/date");
-
-const DEFAULT_LOAN_DAYS = 30;
-const OVERDUE_FINE_AMOUNT = 5;
+const { getLoanPolicy } = require("../config/loanPolicy");
+const { formatDateTime, addDays, overdueWholeDays } = require("../utils/date");
+const auditLogService = require("./auditLogService");
 const ACTIVE_LOAN_STATUSES = ["Borrowing", "Overdue"];
+const OVERDUE_FINE_AMOUNT = 5;
+
+async function computeOverdueFineAmount(loan, returnDate) {
+  const days = overdueWholeDays(loan.dueDate, returnDate);
+  if (days <= 0) return 0;
+  return OVERDUE_FINE_AMOUNT;
+}
 
 async function syncOverdueLoans(where = {}) {
   const now = new Date();
@@ -18,6 +24,7 @@ async function syncOverdueLoans(where = {}) {
     },
     data: {
       status: "Overdue",
+      fineAmount: OVERDUE_FINE_AMOUNT,
     },
   });
 }
@@ -27,8 +34,8 @@ async function syncOverdueLoansForUser(userId) {
 }
 /**
  * Return current loans.
- * @param {} loan 
- * @returns 
+ * @param {} loan
+ * @returns
  */
 function toCurrentLoan(loan) {
   return {
@@ -36,6 +43,7 @@ function toCurrentLoan(loan) {
     bookId: loan.bookId,
     bookTitle: loan.book.title,
     bookAuthor: loan.book.author,
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     renewalCount: loan.renewalCount || 0,
@@ -44,8 +52,8 @@ function toCurrentLoan(loan) {
 }
 /**
  * Return loan history.
- * @param {} loan 
- * @returns 
+ * @param {} loan
+ * @returns
  */
 function toHistoryLoan(loan) {
   return {
@@ -53,6 +61,7 @@ function toHistoryLoan(loan) {
     bookId: loan.book?.id || loan.bookId || null,
     bookTitle: loan.book?.title || "This book is no longer available",
     bookAuthor: loan.book?.author || "-",
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     returnDate: loan.returnDate ? formatDateTime(loan.returnDate) : null,
@@ -180,14 +189,20 @@ async function ensureBorrowAllowed(
 
 async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
   const checkoutDate = new Date();
-  const dueDate = addDays(checkoutDate, DEFAULT_LOAN_DAYS);
+  const { maxDays } = await getLoanPolicy();
+  const dueDate = addDays(checkoutDate, maxDays);
   const nextAvailableCopies = book.availableCopies - 1;
+
+  const availableCopy = await prisma.bookCopy.findFirst({
+    where: { bookId: book.id, available: true },
+  });
 
   const loan = await prisma.$transaction(async (tx) => {
     const createdLoan = await tx.loan.create({
       data: {
         userId,
         bookId: book.id,
+        bookCopyId: availableCopy?.id || null,
         checkoutDate,
         dueDate,
         renewalCount: 0,
@@ -196,8 +211,16 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
       include: {
         book: true,
         user: true,
+        bookCopy: true,
       },
     });
+
+    if (availableCopy) {
+      await tx.bookCopy.update({
+        where: { id: availableCopy.id },
+        data: { available: false },
+      });
+    }
 
     await tx.book.update({
       where: { id: book.id },
@@ -208,15 +231,14 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
     });
 
     if (actorUserId && action) {
-      await tx.auditLog.create({
-        data: {
-          userId: actorUserId,
-          action,
-          entity: "Loan",
-          entityId: createdLoan.id,
-          detail: detail || null,
-        },
-      });
+      await auditLogService.recordWithClient(
+        tx,
+        actorUserId,
+        action,
+        "Loan",
+        createdLoan.id,
+        detail || null,
+      );
     }
 
     return createdLoan;
@@ -230,7 +252,9 @@ async function createLoanRecord({ userId, book, actorUserId, action, detail }) {
 
 async function finalizeLoanReturn(loan, actorUserId, action, detail) {
   const now = new Date();
-  const fineAmount = loan.dueDate < now ? OVERDUE_FINE_AMOUNT : 0;
+  const computedFine = await computeOverdueFineAmount(loan, now);
+  const existingFine = Number(loan.fineAmount) || 0;
+  const fineAmount = Math.max(existingFine, computedFine);
   const nextAvailableCopies = loan.book.availableCopies + 1;
 
   const updatedLoan = await prisma.$transaction(async (tx) => {
@@ -240,13 +264,20 @@ async function finalizeLoanReturn(loan, actorUserId, action, detail) {
         returnDate: now,
         status: "Returned",
         fineAmount,
-        finePaid: fineAmount === 0,
+        finePaid: loan.finePaid || fineAmount === 0,
       },
       include: {
         book: true,
         user: true,
       },
     });
+
+    if (loan.bookCopyId) {
+      await tx.bookCopy.update({
+        where: { id: loan.bookCopyId },
+        data: { available: true },
+      });
+    }
 
     await tx.book.update({
       where: { id: loan.bookId },
@@ -257,15 +288,14 @@ async function finalizeLoanReturn(loan, actorUserId, action, detail) {
     });
 
     if (actorUserId && action) {
-      await tx.auditLog.create({
-        data: {
-          userId: actorUserId,
-          action,
-          entity: "Loan",
-          entityId: loan.id,
-          detail: detail || null,
-        },
-      });
+      await auditLogService.recordWithClient(
+        tx,
+        actorUserId,
+        action,
+        "Loan",
+        loan.id,
+        detail || null,
+      );
     }
 
     return returnedLoan;
@@ -289,6 +319,7 @@ async function getCurrentLoans(userId) {
     },
     include: {
       book: true,
+      bookCopy: true,
     },
     orderBy: {
       dueDate: "asc",
@@ -304,7 +335,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
   await syncOverdueLoansForUser(userId);
 
   const skip = (page - 1) * size;
-  
+
   const [loans, totalCount] = await Promise.all([
     prisma.loan.findMany({
       where: {
@@ -312,6 +343,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
       },
       include: {
         book: true,
+        bookCopy: true,
       },
       orderBy: {
         checkoutDate: "desc",
@@ -327,7 +359,7 @@ async function getHistoryLoans(userId, page = 1, size = 10) {
   ]);
 
   const totalPages = Math.ceil(totalCount / size);
-  
+
   return {
     total: totalCount,
     page,
@@ -361,39 +393,11 @@ async function getLibrarianLoans(query = {}) {
 
   if (keyword) {
     where.OR = [
-      {
-        id: {
-          contains: keyword,
-        },
-      },
-      {
-        user: {
-          name: {
-            contains: keyword,
-          },
-        },
-      },
-      {
-        user: {
-          email: {
-            contains: keyword,
-          },
-        },
-      },
-      {
-        book: {
-          title: {
-            contains: keyword,
-          },
-        },
-      },
-      {
-        book: {
-          isbn: {
-            contains: keyword,
-          },
-        },
-      },
+      { id: { contains: keyword } },
+      { user: { name: { contains: keyword } } },
+      { user: { email: { contains: keyword } } },
+      { book: { title: { contains: keyword } } },
+      { book: { isbn: { contains: keyword } } },
     ];
   }
 
@@ -431,16 +435,42 @@ async function createLoan(userId, payload) {
     throw new AppError(400, "Invalid parameters");
   }
 
+  await syncOverdueLoansForUser(userId);
+
+  const { maxBooks } = await getLoanPolicy();
+  const activeLoanCount = await prisma.loan.count({
+    where: {
+      userId,
+      returnDate: null,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+  });
+
+  if (activeLoanCount >= maxBooks) {
+    const unit = maxBooks === 1 ? "book" : "books";
+    throw new AppError(
+      400,
+      `You have reached the borrowing limit (${maxBooks} ${unit}). Please return some books before borrowing more.`,
+    );
+  }
+
   const book = await ensureBorrowAllowed(userId, { bookId });
   const { loan, nextAvailableCopies } = await createLoanRecord({
     userId,
     book,
+    actorUserId: userId,
+    action: "USER_BORROW",
+    detail: {
+      borrowerId: userId,
+      bookId: book.id,
+    },
   });
 
   return {
     loanId: loan.id,
     bookId: loan.bookId,
     bookTitle: loan.book.title,
+    barcode: loan.bookCopy?.barcode || null,
     checkoutDate: formatDateTime(loan.checkoutDate),
     dueDate: formatDateTime(loan.dueDate),
     availableCopies: nextAvailableCopies,
@@ -449,6 +479,26 @@ async function createLoan(userId, payload) {
 
 async function librarianCheckoutLoan(payload, actorUserId) {
   const borrower = await ensureUserExists(payload?.userId);
+
+  await syncOverdueLoansForUser(borrower.id);
+
+  const { maxBooks } = await getLoanPolicy();
+  const activeLoanCount = await prisma.loan.count({
+    where: {
+      userId: borrower.id,
+      returnDate: null,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+  });
+
+  if (activeLoanCount >= maxBooks) {
+    const unit = maxBooks === 1 ? "book" : "books";
+    throw new AppError(
+      400,
+      `You have reached the borrowing limit (${maxBooks} ${unit}). Please return some books before borrowing more.`,
+    );
+  }
+
   const book = await ensureBorrowAllowed(
     borrower.id,
     payload,
@@ -464,11 +514,11 @@ async function librarianCheckoutLoan(payload, actorUserId) {
     book,
     actorUserId,
     action: "LIBRARIAN_CHECKOUT",
-    detail: JSON.stringify({
+    detail: {
       borrowerId: borrower.id,
       bookId: book.id,
       bookIdentifier: payload?.bookId || payload?.isbn || payload?.bookIdOrIsbn || book.id,
-    }),
+    },
   });
 
   return {
@@ -533,13 +583,20 @@ async function renewLoan(userId, loanId) {
     throw new AppError(400, "This book has been reserved by another reader and cannot be renewed");
   }
 
-  const newDueDate = addDays(loan.dueDate, 30);
+  const { maxDays } = await getLoanPolicy();
+  const newDueDate = addDays(loan.dueDate, maxDays);
   const updatedLoan = await prisma.loan.update({
     where: { id: loanId },
     data: {
       dueDate: newDueDate,
       renewalCount: loan.renewalCount + 1,
     },
+  });
+
+  await auditLogService.record(userId, "USER_RENEW_LOAN", "Loan", loanId, {
+    oldDueDate: formatDateTime(loan.dueDate),
+    newDueDate: formatDateTime(updatedLoan.dueDate),
+    renewalCount: updatedLoan.renewalCount,
   });
 
   return {
@@ -555,6 +612,7 @@ async function returnLoan(userId, loanId) {
     include: {
       book: true,
       user: true,
+      bookCopy: true,
     },
   });
 
@@ -570,20 +628,59 @@ async function returnLoan(userId, loanId) {
     throw new AppError(404, "Book not found");
   }
 
-  const { loan: updatedLoan, nextAvailableCopies } = await finalizeLoanReturn(
-    loan,
-    userId,
-    "RETURN_LOAN",
-    JSON.stringify({
-      borrowerId: loan.userId,
-      bookId: loan.bookId,
-    }),
-  );
+  const now = new Date();
+  const computedFine = await computeOverdueFineAmount(loan, now);
+  const existingFine = Number(loan.fineAmount) || 0;
+  const fineAmount = Math.max(existingFine, computedFine);
+  let nextAvailableCopies;
+
+  const updatedLoan = await prisma.$transaction(async (tx) => {
+    const returnedLoan = await tx.loan.update({
+      where: { id: loanId },
+      data: {
+        returnDate: now,
+        status: "Returned",
+        fineAmount,
+        finePaid: loan.finePaid || fineAmount === 0,
+      },
+      include: {
+        book: true,
+        bookCopy: true,
+      },
+    });
+
+    if (returnedLoan.bookCopyId) {
+      await tx.bookCopy.update({
+        where: { id: returnedLoan.bookCopyId },
+        data: { available: true },
+      });
+    }
+
+    nextAvailableCopies = returnedLoan.book.availableCopies + 1;
+
+    await tx.book.update({
+      where: { id: returnedLoan.bookId },
+      data: {
+        availableCopies: nextAvailableCopies,
+        available: true,
+      },
+    });
+
+    await auditLogService.recordWithClient(tx, userId, "USER_RETURN", "Loan", returnedLoan.id, {
+      borrowerId: userId,
+      bookId: returnedLoan.bookId,
+      bookCopyId: returnedLoan.bookCopyId,
+      fineAmount,
+    });
+
+    return returnedLoan;
+  });
 
   return {
     id: updatedLoan.id,
     bookId: updatedLoan.bookId,
     bookTitle: updatedLoan.book.title,
+    barcode: updatedLoan.bookCopy?.barcode || null,
     returnDate: formatDateTime(updatedLoan.returnDate),
     status: updatedLoan.status,
     fineAmount: Number(updatedLoan.fineAmount),
@@ -603,6 +700,7 @@ async function librarianReturnLoan(payload, actorUserId) {
     include: {
       book: true,
       user: true,
+      bookCopy: true,
     },
   });
 
@@ -625,6 +723,7 @@ async function librarianReturnLoan(payload, actorUserId) {
     JSON.stringify({
       borrowerId: loan.userId,
       bookId: loan.bookId,
+      bookCopyId: loan.bookCopyId,
     }),
   );
 
@@ -639,6 +738,38 @@ async function librarianReturnLoan(payload, actorUserId) {
     fineAmount: Number(updatedLoan.fineAmount),
     availableCopies: nextAvailableCopies,
   };
+}
+
+async function returnLoanByBarcode(userId, barcode) {
+  if (!barcode || typeof barcode !== "string" || !barcode.trim()) {
+    throw new AppError(400, "Barcode is required");
+  }
+
+  const normalizedBarcode = barcode.trim();
+
+  const bookCopy = await prisma.bookCopy.findUnique({
+    where: { barcode: normalizedBarcode },
+    include: { book: true },
+  });
+
+  if (!bookCopy) {
+    throw new AppError(404, "No book copy found with this barcode");
+  }
+
+  const activeLoan = await prisma.loan.findFirst({
+    where: {
+      userId,
+      bookCopyId: bookCopy.id,
+      status: { in: ACTIVE_LOAN_STATUSES },
+    },
+    orderBy: { checkoutDate: "desc" },
+  });
+
+  if (!activeLoan) {
+    throw new AppError(404, "No active loan found for this book copy. You may not have borrowed this copy, or it has already been returned.");
+  }
+
+  return returnLoan(userId, activeLoan.id);
 }
 
 async function payFine(userId, loanId, payload) {
@@ -672,17 +803,9 @@ async function payFine(userId, loanId, payload) {
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        userId,
-        action: "PAY_FINE",
-        entity: "Loan",
-        entityId: loanId,
-        detail: JSON.stringify({
-          amount: fineAmount,
-          method: "SIMULATED",
-        }),
-      },
+    await auditLogService.recordWithClient(tx, userId, "PAY_FINE", "Loan", loanId, {
+      amount: fineAmount,
+      method: "SIMULATED",
     });
 
     return {
@@ -782,6 +905,7 @@ module.exports = {
   renewLoan,
   returnLoan,
   librarianReturnLoan,
+  returnLoanByBarcode,
   payFine,
   librarianPayFine,
 };
