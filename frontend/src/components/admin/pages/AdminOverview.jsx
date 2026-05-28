@@ -11,221 +11,214 @@ import SimpleBarChart from '../components/SimpleBarChart'
  * @param {Function} props.onNavigate - 页面跳转函数
  */
 const AdminOverview = ({ user, onNavigate }) => {
-    const {
-        overview = {},
-        loanTrends = {},
-        popularBooks = {},
-        recentActivities = {},
-        loading,
-        error,
-        refresh
-    } = useDashboard(30) // 30秒自动刷新
+  const {
+    overview = {},
+    loanTrends = {},
+    popularBooks = {},
+    recentActivities = {},
+    loading,
+    error,
+    lastUpdated,
+    refresh
+  } = useDashboard(30)
 
-    // 准备借阅趋势图表数据（安全访问 daily 数组）
-    const chartData = (loanTrends?.daily || []).map(day => ({
-        date: day.date?.slice(5) || '', // 显示 MM-DD
-        checkouts: day.checkouts || 0,
-        returns: day.returns || 0
-    }))
+  const chartData = (loanTrends?.daily || []).map(day => ({
+    date: day.date?.slice(5) || '',
+    checkouts: day.checkouts || 0,
+    returns: day.returns || 0
+  }))
 
-    // 安全获取统计值
-    const totalUsers = overview?.totalUsers ?? 0
-    const totalBooks = overview?.totalBooks ?? 0
-    const activeLoans = overview?.activeLoans ?? 0
-    const overdueLoans = overview?.overdueLoans ?? 0
+  const totalUsers = overview?.totalUsers ?? 0
+  const totalBooks = overview?.totalBooks ?? 0
+  const activeLoans = overview?.activeLoans ?? 0
+  const overdueLoans = overview?.overdueLoans ?? 0
 
-    return (
-        <div className="content">
-            {/* 欢迎横幅 */}
-            <div className="welcome-banner">
-                <div className="welcome-text">
-                    <h2>Welcome, {user.name}!</h2>
-                    <p>
-                        Today is{' '}
-                        {new Date().toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            weekday: 'long'
-                        })}
-                    </p>
-                </div>
-                <div className="banner-icon">🛡️</div>
-            </div>
+  return (
+    <div className="content">
+      <div className="welcome-banner">
+        <div className="welcome-text">
+          <h2>Welcome, {user.name}!</h2>
+          <p>
+            Today is{' '}
+            {new Date().toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              weekday: 'long'
+            })}
+          </p>
+        </div>
+        <div className="banner-icon">🛡️</div>
+      </div>
 
-            {/* 错误提示 */}
-            {error && (
-                <div className="error-banner">
-                    ⚠️ {error} &nbsp;
-                    <button onClick={refresh} className="retry-btn">
-                        Retry
-                    </button>
-                </div>
+      {error && (
+        <div className="error-banner">
+          ⚠️ {error} &nbsp;
+          <button onClick={refresh} className="retry-btn">
+            Retry
+          </button>
+        </div>
+      )}
+
+      <div className="stats-grid">
+        <StatCard
+          title="Total Users"
+          value={totalUsers}
+          icon="👥"
+          loading={loading}
+          variant="blue"
+        />
+        <StatCard
+          title="Total Books"
+          value={totalBooks}
+          icon="📚"
+          loading={loading}
+          variant="green"
+        />
+        <StatCard
+          title="Active Loans"
+          value={activeLoans}
+          icon="📖"
+          loading={loading}
+          variant="orange"
+        />
+        <StatCard
+          title="Overdue"
+          value={overdueLoans}
+          icon="⚠️"
+          loading={loading}
+          variant="red"
+        />
+      </div>
+
+      <div className="dashboard-two-columns">
+        <div className="dashboard-card">
+          <div className="card-header">
+            <h3>Loan Trends (Last 30 Days)</h3>
+            {!loading && (
+              <button onClick={refresh} className="refresh-small">
+                🔄
+              </button>
             )}
-
-            {/* 统计卡片区 */}
-            <div className="stats-grid">
-                <StatCard
-                    title="Total Users"
-                    value={totalUsers}
-                    icon="👥"
-                    loading={loading}
-                    variant="blue"
+          </div>
+          <div className="card-content">
+            {loading ? (
+              <div className="skeleton-chart" />
+            ) : (
+              <>
+                <SimpleBarChart
+                  data={chartData}
+                  xKey="date"
+                  yKey="checkouts"
+                  height={180}
                 />
-                <StatCard
-                    title="Total Books"
-                    value={totalBooks}
-                    icon="📚"
-                    loading={loading}
-                    variant="green"
-                />
-                <StatCard
-                    title="Active Loans"
-                    value={activeLoans}
-                    icon="📖"
-                    loading={loading}
-                    variant="orange"
-                />
-                <StatCard
-                    title="Overdue"
-                    value={overdueLoans}
-                    icon="⚠️"
-                    loading={loading}
-                    variant="red"
-                />
-            </div>
-
-            {/* 两列布局：借阅趋势 + 热门图书 */}
-            <div className="dashboard-two-columns">
-                {/* 借阅趋势图 */}
-                <div className="dashboard-card">
-                    <div className="card-header">
-                        <h3>Loan Trends (Last 30 Days)</h3>
-                        {!loading && (
-                            <button onClick={refresh} className="refresh-small">
-                                🔄
-                            </button>
-                        )}
-                    </div>
-                    <div className="card-content">
-                        {loading ? (
-                            <div className="skeleton-chart" />
-                        ) : (
-                            <>
-                                <SimpleBarChart
-                                    data={chartData}
-                                    xKey="date"
-                                    yKey="checkouts"
-                                    height={180}
-                                />
-                                <div className="chart-legend">
-                                    <span>📘 Checkouts</span>
-                                </div>
-                            </>
-                        )}
-                    </div>
+                <div className="chart-legend">
+                  <span>📘 Checkouts</span>
                 </div>
+              </>
+            )}
+          </div>
+        </div>
 
-                {/* 热门图书排行 */}
-                <div className="dashboard-card">
-                    <div className="card-header">
-                        <h3>🔥 Popular Books</h3>
-                    </div>
-                    <div className="card-content">
-                        {loading ? (
-                            <div className="skeleton-list" />
-                        ) : (
-                            <ol className="popular-list">
-                                {(popularBooks?.list || []).slice(0, 5).map((book, idx) => (
-                                    <li key={book.bookId}>
-                                        <span className="rank">{idx + 1}.</span>
-                                        <span className="title">{book.title}</span>
-                                        <span className="count">{book.loanCount} borrows</span>
-                                    </li>
-                                ))}
-                                {(!popularBooks?.list || popularBooks.list.length === 0) && (
-                                    <div className="empty-meta">No data yet</div>
-                                )}
-                            </ol>
-                        )}
-                    </div>
-                </div>
-            </div>
+        <div className="dashboard-card">
+          <div className="card-header">
+            <h3>🔥 Popular Books</h3>
+          </div>
+          <div className="card-content">
+            {loading ? (
+              <div className="skeleton-list" />
+            ) : (
+              <ol className="popular-list">
+                {(popularBooks?.list || []).map((book, idx) => (
+                  <li key={book.bookId}>
+                    <span className="rank">{idx + 1}.</span>
+                    <span className="title">{book.title}</span>
+                    <span className="count">{book.loanCount} borrows</span>
+                  </li>
+                ))}
+                {(!popularBooks?.list || popularBooks.list.length === 0) && (
+                  <div className="empty-meta">No data yet</div>
+                )}
+              </ol>
+            )}
+          </div>
+        </div>
+      </div>
 
-            {/* 两列布局：近期动态 + 快捷入口 */}
-            <div className="dashboard-two-columns">
-                {/* 近期动态 */}
-                <div className="dashboard-card">
-                    <div className="card-header">
-                        <h3>📋 Recent Activities</h3>
-                    </div>
-                    <div className="card-content">
-                        {loading ? (
-                            <div className="skeleton-list" />
-                        ) : (
-                            <ul className="activity-list">
-                                {(recentActivities?.list || []).slice(0, 6).map(act => (
-                                    <li key={act.id}>
+      <div className="dashboard-two-columns">
+        <div className="dashboard-card">
+          <div className="card-header">
+            <h3>📋 Recent Activities</h3>
+          </div>
+          <div className="card-content">
+            {loading ? (
+              <div className="skeleton-list" />
+            ) : (
+              <ul className="activity-list">
+                {(recentActivities?.list || []).slice(0, 6).map(act => (
+                  <li key={act.id}>
                     <span className="time">
                       {new Date(act.createdAt).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
+                        hour: '2-digit',
+                        minute: '2-digit'
                       })}
                     </span>
-                                        <span className="action">{act.action}</span>
-                                        <span className="operator">{act.operator}</span>
-                                    </li>
-                                ))}
-                                {(!recentActivities?.list || recentActivities.list.length === 0) && (
-                                    <div className="empty-meta">No recent activities</div>
-                                )}
-                            </ul>
-                        )}
-                    </div>
-                </div>
+                    <span className="action">{act.action}</span>
+                    <span className="operator">{act.operator}</span>
+                  </li>
+                ))}
+                {(!recentActivities?.list || recentActivities.list.length === 0) && (
+                  <div className="empty-meta">No recent activities</div>
+                )}
+              </ul>
+            )}
+          </div>
+        </div>
 
-                {/* 快捷入口 */}
-                <div className="quick-actions-card">
-                    <h3>Quick Actions</h3>
-                    <div className="quick-actions-grid">
-                        <button
-                            className="quick-action-btn green"
-                            onClick={() => onNavigate(ADMIN_PAGES.USER_MANAGE)}
-                        >
-                            🧩 Users Manage
-                        </button>
-                        <button
-                            className="quick-action-btn blue"
-                            onClick={() => onNavigate(ADMIN_PAGES.SYSTEM_CONFIG)}
-                        >
-                            ⚙️ System Config
-                        </button>
-                        <button
-                            className="quick-action-btn orange"
-                            onClick={() => onNavigate(ADMIN_PAGES.AUDIT_LOGS)}
-                        >
-                            📜 Audit Logs
-                        </button>
-                        <button
-                            className="quick-action-btn gray"
-                            onClick={() => onNavigate(ADMIN_PAGES.OVERVIEW)}
-                        >
-                            🏠 Refresh
-                        </button>
-                    </div>
-                </div>
-            </div>
+        <div className="quick-actions-card">
+          <h3>Quick Actions</h3>
+          <div className="quick-actions-grid">
+            <button
+              className="quick-action-btn green"
+              onClick={() => onNavigate(ADMIN_PAGES.USER_MANAGE)}
+            >
+              🧩 Users Manage
+            </button>
+            <button
+              className="quick-action-btn blue"
+              onClick={() => onNavigate(ADMIN_PAGES.SYSTEM_CONFIG)}
+            >
+              ⚙️ System Config
+            </button>
+            <button
+              className="quick-action-btn orange"
+              onClick={() => onNavigate(ADMIN_PAGES.AUDIT_LOGS)}
+            >
+              📜 Audit Logs
+            </button>
+            <button
+              className="quick-action-btn gray"
+              onClick={() => onNavigate(ADMIN_PAGES.OVERVIEW)}
+            >
+              🏠 Refresh
+            </button>
+          </div>
+        </div>
+      </div>
 
-            {/* 手动刷新区域 */}
-            <div className="refresh-footer">
-                <button onClick={refresh} className="refresh-btn" disabled={loading}>
-                    {loading ? 'Loading...' : '⟳ Refresh All Data'}
-                </button>
-                <span className="auto-hint">Auto-refresh every 30s</span>
-            </div>
+      <div className="refresh-footer">
+        <span className="auto-hint">
+          {lastUpdated
+            ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+            : 'Not yet loaded'}
+          &nbsp;· Auto-refresh every 30s
+        </span>
+        <button onClick={refresh} className="refresh-btn" disabled={loading}>
+          {loading ? 'Loading...' : '⟳ Refresh All Data'}
+        </button>
+      </div>
 
-            {/* 内嵌样式（保持与原风格一致） */}
-            <style>{`
+      <style>{`
         .error-banner {
           background: #fee2e2;
           color: #b91c1c;
@@ -312,7 +305,7 @@ const AdminOverview = ({ user, onNavigate }) => {
         .refresh-footer {
           margin-top: 32px;
           display: flex;
-          justify-content: flex-end;
+          justify-content: space-between;
           align-items: center;
           gap: 16px;
           padding-top: 16px;
@@ -361,8 +354,8 @@ const AdminOverview = ({ user, onNavigate }) => {
           }
         }
       `}</style>
-        </div>
-    )
+    </div>
+  )
 }
 
 export default AdminOverview
