@@ -3,71 +3,71 @@ const API_BASE = '/api/admin'
 const getToken = () => localStorage.getItem('token')
 
 async function request(path, options = {}) {
-    const token = getToken()
-    const res = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers || {})
-        }
-    })
-
-    const payload = await res.json().catch(() => ({}))
-    const isSuccess = res.ok && (payload.code === undefined || payload.code === 200)
-
-    if (!isSuccess) {
-        const error = new Error(payload.message || 'Request failed')
-        error.status = res.status
-        throw error
+  const token = getToken()
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {})
     }
+  })
 
-    return payload.data
+  const payload = await res.json().catch(() => ({}))
+  const isSuccess = res.ok && (payload.code === undefined || payload.code === 200)
+
+  if (!isSuccess) {
+    const error = new Error(payload.message || 'Request failed')
+    error.status = res.status
+    throw error
+  }
+
+  return payload.data
 }
 
 const qs = (params = {}) => {
-    const query = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-            query.append(key, String(value))
-        }
-    })
-    const q = query.toString()
-    return q ? `?${q}` : ''
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, String(value))
+    }
+  })
+  const q = query.toString()
+  return q ? `?${q}` : ''
 }
 
 export const adminApi = {
-    listLibrarians: (params) => request(`/librarians${qs(params)}`),
-    createLibrarian: (body) => request('/librarians', { method: 'POST', body: JSON.stringify(body) }),
-    updateLibrarian: (id, body) => request(`/librarians/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-    deleteLibrarian: (id) => request(`/librarians/${id}`, { method: 'DELETE' }),
+  listLibrarians: (params) => request(`/librarians${qs(params)}`),
+  createLibrarian: (body) => request('/librarians', { method: 'POST', body: JSON.stringify(body) }),
+  updateLibrarian: (id, body) => request(`/librarians/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteLibrarian: (id) => request(`/librarians/${id}`, { method: 'DELETE' }),
 
-    listUsers: (params) => request(`/users${qs(params)}`),
-    deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
-    updateUserRole: (id, role) => request(`/users/${id}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ role })
-    }),
-    resetUserPassword: (id, newPassword) => request(`/users/${id}/reset-password`, {
-        method: 'POST',
-        body: JSON.stringify(newPassword ? { newPassword } : {})
-    }),
+  listUsers: (params) => request(`/users${qs(params)}`),
+  deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+  updateUserRole: (id, role) => request(`/users/${id}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ role })
+  }),
+  resetUserPassword: (id, newPassword) => request(`/users/${id}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify(newPassword ? { newPassword } : {})
+  }),
 
-    getConfig: () => request('/config'),
-    updateBorrowRules: (body) => request('/config/borrow-rules', {
-        method: 'PUT',
-        body: JSON.stringify(body)
-    }),
-    updateFineRate: (body) => request('/config/fine-rate', {
-        method: 'PUT',
-        body: JSON.stringify(body)
-    }),
+  getConfig: () => request('/config'),
+  updateBorrowRules: (body) => request('/config/borrow-rules', {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  }),
+  updateFineRate: (body) => request('/config/fine-rate', {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  }),
 
-    listAuditLogs: (params) => request(`/audit-logs${qs(params)}`),
+  listAuditLogs: (params) => request(`/audit-logs${qs(params)}`),
 
-    // Dashboard（新增）
-    getDashboardOverview: () => request('/dashboard/overview'),
-    getLoanTrends: (period = '30d') => request(`/dashboard/loan-trends?period=${period}`),
-    getPopularBooks: (limit = 10) => request(`/dashboard/popular-books?limit=${limit}`),
-    getRecentActivities: (limit = 20) => request(`/dashboard/recent-activities?limit=${limit}`)
+  // Dashboard
+  getDashboardOverview: () => request('/dashboard/overview'),
+  getLoanTrends: (period = '30d') => request(`/dashboard/loan-trends?period=${period}`),
+  getPopularBooks: (limit = 10) => request(`/dashboard/popular-books?limit=${limit}`),
+  getRecentActivities: (limit = 20) => request(`/dashboard/recent-activities?limit=${limit}`)
 }
