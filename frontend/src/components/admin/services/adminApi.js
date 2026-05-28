@@ -62,5 +62,12 @@ export const adminApi = {
     method: 'PUT',
     body: JSON.stringify(body)
   }),
-  listAuditLogs: (params) => request(`/audit-logs${qs(params)}`)
+
+  listAuditLogs: (params) => request(`/audit-logs${qs(params)}`),
+
+  // Dashboard
+  getDashboardOverview: () => request('/dashboard/overview'),
+  getLoanTrends: (period = '30d') => request(`/dashboard/loan-trends?period=${period}`),
+  getPopularBooks: (limit = 10) => request(`/dashboard/popular-books?limit=${limit}`),
+  getRecentActivities: (limit = 20) => request(`/dashboard/recent-activities?limit=${limit}`)
 }
