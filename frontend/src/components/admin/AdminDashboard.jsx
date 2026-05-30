@@ -72,10 +72,6 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
             <span className="icon">⚙️</span>
             <span>System Config</span>
           </div>
-          <div className={`menu-item ${currentPage === ADMIN_PAGES.AUDIT_LOGS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.AUDIT_LOGS)}>
-            <span className="icon">📜</span>
-            <span>Audit Logs</span>
-          </div>
           <div className={`menu-item ${currentPage === ADMIN_PAGES.BACKUP_MANAGE ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.BACKUP_MANAGE)}>
             <span className="icon">💾</span>
             <span>Backup Manage</span>
@@ -87,6 +83,10 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
           <div className={`menu-item ${currentPage === ADMIN_PAGES.REPORTS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.REPORTS)}>
             <span className="icon">📊</span>
             <span>Reports</span>
+          </div>
+          <div className={`menu-item ${currentPage === ADMIN_PAGES.AUDIT_LOGS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.AUDIT_LOGS)}>
+            <span className="icon">📜</span>
+            <span>Audit Logs</span>
           </div>
         </nav>
         <div className="user-info">
