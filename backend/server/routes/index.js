@@ -16,6 +16,8 @@ const announcementRoutes = require("./announcementRoutes");  // 公告路由
 const librarianRoutes = require("./librarianRoutes");
 const adminAuditRoutes = require("./adminAuditRoutes");
 const adminConfigRoutes = require("./adminConfigRoutes");
+const backupRoutes = require("./backupRoutes");
+const adminAnnouncementRoutes = require("./adminAnnouncementRoutes");
 
 const router = express.Router();
 
@@ -34,6 +36,8 @@ router.use(adminDashboardRoutes);
 router.use(announcementRoutes);
 router.use(adminAuditRoutes);
 router.use(adminConfigRoutes);
+router.use(backupRoutes);
+router.use(adminAnnouncementRoutes);
 router.use("/admin", adminRoutes);
 
 module.exports = router;
