@@ -5,8 +5,8 @@ import AdminOverview from './pages/AdminOverview'
 import UserManagement from './pages/UserManagement'
 import SystemConfig from './pages/SystemConfig'
 import AuditLogs from './pages/AuditLogs'
-import BackupManage from './pages/BackupManage'
-import AnnouncementManage from './pages/AnnouncementManage'
+import BackupManagement from './pages/BackupManagement'
+import AnnouncementManagement from './pages/AnnouncementManagement'
 
 const PAGE_NAME = {
   [ADMIN_PAGES.OVERVIEW]: 'Overview',
@@ -42,9 +42,9 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
       case ADMIN_PAGES.AUDIT_LOGS:
         return <AuditLogs currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.BACKUP_MANAGE:
-        return <BackupManage currentUserId={currentUserId} onNotify={notify} />
+        return <BackupManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.ANNOUNCEMENT_MANAGE:
-        return <AnnouncementManage currentUserId={currentUserId} onNotify={notify} />
+        return <AnnouncementManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.OVERVIEW:
       default:
         return <AdminOverview user={user} onNavigate={setCurrentPage} />
