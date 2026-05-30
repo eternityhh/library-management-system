@@ -18,6 +18,7 @@ const adminAuditRoutes = require("./adminAuditRoutes");
 const adminConfigRoutes = require("./adminConfigRoutes");
 const backupRoutes = require("./backupRoutes");
 const adminAnnouncementRoutes = require("./adminAnnouncementRoutes");
+const adminReportRoutes = require("./adminReportRoutes");
 
 const router = express.Router();
 
@@ -38,6 +39,7 @@ router.use(adminAuditRoutes);
 router.use(adminConfigRoutes);
 router.use(backupRoutes);
 router.use(adminAnnouncementRoutes);
+router.use(adminReportRoutes);
 router.use("/admin", adminRoutes);
 
 module.exports = router;

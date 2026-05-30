@@ -83,5 +83,13 @@ export const adminApi = {
   updateAnnouncement: (id, body) => request(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAnnouncement: (id) => request(`/announcements/${id}`, { method: 'DELETE' }),
   publishAnnouncement: (id) => request(`/announcements/${id}/publish`, { method: 'PUT' }),
-  unpublishAnnouncement: (id) => request(`/announcements/${id}/unpublish`, { method: 'PUT' })
+  unpublishAnnouncement: (id) => request(`/announcements/${id}/unpublish`, { method: 'PUT' }),
+
+  // Reports
+  getMonthlyBorrowingReport: (month) => request(`/dashboard/reports/borrowing?month=${encodeURIComponent(month)}`),
+  getOverdueStatsReport: (month) => request(`/dashboard/reports/overdue?month=${encodeURIComponent(month)}`),
+  getUsageSummaryReport: (month) => request(`/dashboard/reports/usage?month=${encodeURIComponent(month)}`),
+  getBorrowingExportUrl: (month) => `${API_BASE}/dashboard/reports/borrowing/export?month=${encodeURIComponent(month)}`,
+  getOverdueExportUrl: (month) => `${API_BASE}/dashboard/reports/overdue/export?month=${encodeURIComponent(month)}`,
+  getUsageExportUrl: (month) => `${API_BASE}/dashboard/reports/usage/export?month=${encodeURIComponent(month)}`,
 }

@@ -4,7 +4,8 @@ export const ADMIN_PAGES = {
   SYSTEM_CONFIG: 'system-config',
   AUDIT_LOGS: 'audit-logs',
   BACKUP_MANAGE: 'backup-manage',
-  ANNOUNCEMENT_MANAGE: 'announcement-manage'
+  ANNOUNCEMENT_MANAGE: 'announcement-manage',
+  REPORTS: 'reports'
 }
 
 export const ROLE_OPTIONS = ['STUDENT', 'LIBRARIAN', 'ADMIN']

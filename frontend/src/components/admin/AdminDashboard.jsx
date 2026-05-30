@@ -7,6 +7,7 @@ import SystemConfig from './pages/SystemConfig'
 import AuditLogs from './pages/AuditLogs'
 import BackupManagement from './pages/BackupManagement'
 import AnnouncementManagement from './pages/AnnouncementManagement'
+import Reports from './pages/Reports'
 
 const PAGE_NAME = {
   [ADMIN_PAGES.OVERVIEW]: 'Overview',
@@ -16,7 +17,8 @@ const PAGE_NAME = {
   [ADMIN_PAGES.SYSTEM_CONFIG]: 'System Config',
   [ADMIN_PAGES.AUDIT_LOGS]: 'Audit Logs',
   [ADMIN_PAGES.BACKUP_MANAGE]: 'Backup Manage',
-  [ADMIN_PAGES.ANNOUNCEMENT_MANAGE]: 'Announcement Manage'
+  [ADMIN_PAGES.ANNOUNCEMENT_MANAGE]: 'Announcement Manage',
+  [ADMIN_PAGES.REPORTS]: 'Reports'
 }
 
 const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
@@ -45,6 +47,8 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
         return <BackupManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.ANNOUNCEMENT_MANAGE:
         return <AnnouncementManagement currentUserId={currentUserId} onNotify={notify} />
+      case ADMIN_PAGES.REPORTS:
+        return <Reports currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.OVERVIEW:
       default:
         return <AdminOverview user={user} onNavigate={setCurrentPage} />
@@ -79,6 +83,10 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
           <div className={`menu-item ${currentPage === ADMIN_PAGES.ANNOUNCEMENT_MANAGE ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.ANNOUNCEMENT_MANAGE)}>
             <span className="icon">📢</span>
             <span>Announcement Manage</span>
+          </div>
+          <div className={`menu-item ${currentPage === ADMIN_PAGES.REPORTS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.REPORTS)}>
+            <span className="icon">📊</span>
+            <span>Reports</span>
           </div>
         </nav>
         <div className="user-info">
