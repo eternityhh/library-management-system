@@ -19,6 +19,7 @@ const adminConfigRoutes = require("./adminConfigRoutes");
 const backupRoutes = require("./backupRoutes");
 const adminAnnouncementRoutes = require("./adminAnnouncementRoutes");
 const adminReportRoutes = require("./adminReportRoutes");
+const adminAcquisitionRoutes = require("./adminAcquisitionRoutes");
 
 const router = express.Router();
 
@@ -40,6 +41,7 @@ router.use(adminConfigRoutes);
 router.use(backupRoutes);
 router.use(adminAnnouncementRoutes);
 router.use(adminReportRoutes);
+router.use(adminAcquisitionRoutes);
 router.use("/admin", adminRoutes);
 
 module.exports = router;

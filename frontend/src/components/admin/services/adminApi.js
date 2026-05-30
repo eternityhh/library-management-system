@@ -92,4 +92,9 @@ export const adminApi = {
   getBorrowingExportUrl: (month) => `${API_BASE}/dashboard/reports/borrowing/export?month=${encodeURIComponent(month)}`,
   getOverdueExportUrl: (month) => `${API_BASE}/dashboard/reports/overdue/export?month=${encodeURIComponent(month)}`,
   getUsageExportUrl: (month) => `${API_BASE}/dashboard/reports/usage/export?month=${encodeURIComponent(month)}`,
+
+  // Acquisition
+  listAcquisitionRequests: (params) => request(`/acquisition-requests${qs(params)}`),
+  approveAcquisitionRequest: (id) => request(`/acquisition-requests/${id}/approve`, { method: 'PUT' }),
+  rejectAcquisitionRequest: (id, reason) => request(`/acquisition-requests/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) }),
 }

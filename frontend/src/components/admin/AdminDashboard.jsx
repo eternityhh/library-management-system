@@ -8,6 +8,7 @@ import AuditLogs from './pages/AuditLogs'
 import BackupManagement from './pages/BackupManagement'
 import AnnouncementManagement from './pages/AnnouncementManagement'
 import Reports from './pages/Reports'
+import AcquisitionManagement from './pages/AcquisitionManagement'
 
 const PAGE_NAME = {
   [ADMIN_PAGES.OVERVIEW]: 'Overview',
@@ -18,7 +19,8 @@ const PAGE_NAME = {
   [ADMIN_PAGES.AUDIT_LOGS]: 'Audit Logs',
   [ADMIN_PAGES.BACKUP_MANAGE]: 'Backup Manage',
   [ADMIN_PAGES.ANNOUNCEMENT_MANAGE]: 'Announcement Manage',
-  [ADMIN_PAGES.REPORTS]: 'Reports'
+  [ADMIN_PAGES.REPORTS]: 'Reports',
+  [ADMIN_PAGES.ACQUISITION_MANAGE]: 'Acquisition Manage'
 }
 
 const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
@@ -49,6 +51,8 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
         return <AnnouncementManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.REPORTS:
         return <Reports currentUserId={currentUserId} onNotify={notify} />
+      case ADMIN_PAGES.ACQUISITION_MANAGE:
+        return <AcquisitionManagement currentUserId={currentUserId} onNotify={notify} />
       case ADMIN_PAGES.OVERVIEW:
       default:
         return <AdminOverview user={user} onNavigate={setCurrentPage} />
@@ -83,6 +87,10 @@ const AdminDashboard = ({ user, handleLogout, getRoleName }) => {
           <div className={`menu-item ${currentPage === ADMIN_PAGES.REPORTS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.REPORTS)}>
             <span className="icon">📊</span>
             <span>Reports</span>
+          </div>
+          <div className={`menu-item ${currentPage === ADMIN_PAGES.ACQUISITION_MANAGE ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.ACQUISITION_MANAGE)}>
+            <span className="icon">📋</span>
+            <span>Acquisition Manage</span>
           </div>
           <div className={`menu-item ${currentPage === ADMIN_PAGES.AUDIT_LOGS ? 'active' : ''}`} onClick={() => setCurrentPage(ADMIN_PAGES.AUDIT_LOGS)}>
             <span className="icon">📜</span>

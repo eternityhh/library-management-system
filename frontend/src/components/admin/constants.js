@@ -5,7 +5,8 @@ export const ADMIN_PAGES = {
   AUDIT_LOGS: 'audit-logs',
   BACKUP_MANAGE: 'backup-manage',
   ANNOUNCEMENT_MANAGE: 'announcement-manage',
-  REPORTS: 'reports'
+  REPORTS: 'reports',
+  ACQUISITION_MANAGE: 'acquisition-manage'
 }
 
 export const ROLE_OPTIONS = ['STUDENT', 'LIBRARIAN', 'ADMIN']
