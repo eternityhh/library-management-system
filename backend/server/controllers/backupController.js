@@ -5,7 +5,7 @@ async function createBackup(req, res, next) {
   try {
     const operatorId = req.currentUser ? req.currentUser.id : null;
     const data = await backupService.createBackup(operatorId);
-    sendSuccess(res, data, "备份创建成功");
+    sendSuccess(res, data, "Backup created successfully");
   } catch (error) {
     next(error);
   }
