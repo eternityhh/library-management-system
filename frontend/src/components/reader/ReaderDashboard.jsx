@@ -52,6 +52,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
   // 罚款支付状态
   const [payFineLoading, setPayFineLoading] = useState(false)
+  const [selectedFine, setSelectedFine] = useState(null)
 
   // 还书状态
   const [returnBarcode, setReturnBarcode] = useState('')
@@ -63,6 +64,101 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({ name: '', studentId: '' })
   const [profileLoading, setProfileLoading] = useState(false)
+
+
+  // 个人仪表盘状态与请求逻辑
+  const [dashData, setDashData] = useState({
+    expiringSoon: 0,
+    overdue: 0,
+    holds: 0
+  });
+  const [dashLoading, setDashLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentPage === 'dashboard') {
+      const fetchDash = async () => {
+        setDashLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`${API_BASE}/dashboard`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.code === 200) {
+            const now = new Date();
+            const sevenDaysLater = new Date();
+            sevenDaysLater.setDate(now.getDate() + 7);
+
+            let expiring = 0;
+            let overdue = 0;
+
+            (data.data?.currentLoans || []).forEach(loan => {
+              const dueDate = new Date(loan.dueDate);
+              if (dueDate < now) {
+                overdue++;
+              } else if (dueDate <= sevenDaysLater) {
+                expiring++;
+              }
+            });
+
+            setDashData({
+              expiringSoon: expiring,
+              overdue: overdue,
+              holds: data.data?.holdsCount || 0
+            });
+          }
+        } catch (err) {
+          console.error("Dashboard fetch error:", err);
+        }
+        setDashLoading(false);
+      };
+      fetchDash();
+    }
+  }, [currentPage]);
+
+  // 公告与新书状态 (3.1 & 3.3)
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null); // 用于公告详情页
+
+  const [newBooks, setNewBooks] = useState([]);
+  const [newBooksLoading, setNewBooksLoading] = useState(false);
+
+  // 获取公告列表
+  const fetchAnnouncements = async () => {
+    setAnnouncementsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/announcements`);
+      const data = await res.json();
+      if (data.code === 200) {
+        setAnnouncements(data.data.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch announcements error:", err);
+    }
+    setAnnouncementsLoading(false);
+  };
+
+  // 获取新书通报 (1个月内上架)
+  const fetchNewBooks = async () => {
+    setNewBooksLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/books/new`);
+      const data = await res.json();
+      if (data.code === 200) {
+        setNewBooks(data.data.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch new books error:", err);
+    }
+    setNewBooksLoading(false);
+  };
+
+  // 监听页面切换，自动加载数据
+  useEffect(() => {
+    if (currentPage === 'announcements') fetchAnnouncements();
+    if (currentPage === 'new-books') fetchNewBooks();
+  }, [currentPage]);
 
   // 搜索筛选状态
   const [genreFilter, setGenreFilter] = useState('')
@@ -102,6 +198,157 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       fetchAllBooks(pagination.page, pagination.size)
     }
   }, [currentPage])
+
+
+  // 资源荐购申请 (US 3.2)
+  const [acquisitions, setAcquisitions] = useState([]);
+  const [acquisitionsLoading, setAcquisitionsLoading] = useState(false);
+  const [acqForm, setAcqForm] = useState({ title: '', author: '', isbn: '', reason: '' });
+  const [acqSubmitLoading, setAcqSubmitLoading] = useState(false);
+  const [acqLookupLoading, setAcqLookupLoading] = useState(false);
+  const [acqStatusFilter, setAcqStatusFilter] = useState('');
+
+  // 获取荐购记录
+  const fetchAcquisitions = async (status = '') => {
+    setAcquisitionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const url = status ? `${API_BASE}/acquisition-requests?status=${status}` : `${API_BASE}/acquisition-requests`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.code === 200) {
+        setAcquisitions(data.data?.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch acquisitions error:", err);
+    }
+    setAcquisitionsLoading(false);
+  };
+
+  const handleAcqLookupIsbn = async (isbn) => {
+    const normalizedIsbn = isbn.trim();
+    if (!normalizedIsbn || normalizedIsbn.length < 10) {
+      showMessage('error', 'Please enter a valid ISBN (at least 10 characters)');
+      return null;
+    }
+
+    setAcqLookupLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/books/scrape?isbn=${encodeURIComponent(normalizedIsbn)}`);
+      const data = await res.json();
+
+      if (res.ok && data.code === 200 && data.data?.title) {
+        const bookInfo = {
+          title: data.data.title || '',
+          author: data.data.author || ''
+        };
+        setAcqForm((prev) => ({
+          ...prev,
+          isbn: normalizedIsbn,
+          title: bookInfo.title,
+          author: bookInfo.author
+        }));
+        showMessage('success', 'Book information has been auto-filled');
+        return bookInfo;
+      }
+
+      showMessage('error', data.message || 'Unable to find book information for this ISBN');
+      return null;
+    } catch (err) {
+      showMessage('error', 'Network error: ' + err.message);
+      return null;
+    } finally {
+      setAcqLookupLoading(false);
+    }
+  };
+
+  // 提交荐购申请
+  const handleAcqSubmit = async (e) => {
+    e.preventDefault();
+    if (!acqForm.isbn.trim()) {
+      showMessage('error', 'ISBN is required');
+      return;
+    }
+
+    let title = acqForm.title.trim();
+    let author = acqForm.author.trim();
+    if (!title) {
+      const bookInfo = await handleAcqLookupIsbn(acqForm.isbn);
+      if (!bookInfo?.title) {
+        return;
+      }
+
+      title = bookInfo.title.trim();
+      author = bookInfo.author.trim();
+    }
+
+    if (!title) {
+      showMessage('error', 'Unable to submit without a valid ISBN lookup result');
+      return;
+    }
+
+    setAcqSubmitLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/acquisition-requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...acqForm,
+          title,
+          author
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.code === 200) {
+        showMessage('success', 'Recommendation submitted successfully!');
+        setAcqForm({ title: '', author: '', isbn: '', reason: '' }); // 清空表单
+        fetchAcquisitions(acqStatusFilter); // 刷新列表
+      } else {
+        showMessage('error', data.message || 'Failed to submit recommendation');
+      }
+    } catch (err) {
+      showMessage('error', 'Network error: ' + err.message);
+    }
+    setAcqSubmitLoading(false);
+  };
+
+  // 监听页面切换自动加载数据
+  useEffect(() => {
+    if (currentPage === 'recommend') fetchAcquisitions(acqStatusFilter);
+  }, [currentPage]);
+
+  //  借阅排行榜 (3.5)
+  const [rankings, setRankings] = useState([]);
+  const [rankingsLoading, setRankingsLoading] = useState(false);
+  const [rankingPeriod, setRankingPeriod] = useState('month'); // 默认本月
+
+  // 获取排行榜数据
+  const fetchRankings = async (period = 'month') => {
+    setRankingsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      // 强行对齐产品需求，传递 month, 3months, year
+      const res = await fetch(`${API_BASE}/books/ranking?period=${period}&limit=10`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        setRankings(data.data?.list || []);
+      }
+    } catch (err) {
+      console.error("Fetch rankings error:", err);
+    }
+    setRankingsLoading(false);
+  };
+
+  // 监听页面切换自动加载数据
+  useEffect(() => {
+    if (currentPage === 'ranking') fetchRankings(rankingPeriod);
+  }, [currentPage]);
 
   // Show message
   const showMessage = (type, text) => {
@@ -213,6 +460,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       if (!res.ok) {
         const errorMessage = data?.message || `HTTP error! status: ${res.status}`
         showMessage('error', errorMessage)
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
         return
       }
 
@@ -223,11 +471,13 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         if (bookDetail) handleViewDetail(bookId)
       } else {
         showMessage('error', data?.message || 'Borrow failed')
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
+    } finally {
+      setBorrowLoading(false)
     }
-    setBorrowLoading(false)
   }
 
   // Get profile (1.8)
@@ -280,6 +530,12 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     setLoanHistoryLoading(false)
   }
 
+  const refreshLoanStatusViews = (page = loanHistoryPagination.page || 1, size = loanHistoryPagination.size || 10) => {
+    fetchLoanHistory(page, size)
+    fetchFines()
+    onRefreshStats && onRefreshStats()
+  }
+
   // Renew loan
   const handleRenew = async (loanId) => {
     setRenewLoading(true)
@@ -292,10 +548,10 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       const data = await res.json()
       if (res.ok) {
         showMessage('success', `Renewed successfully! New due date: ${new Date(data.data.dueDate).toLocaleDateString('en-US')}`)
-        fetchLoanHistory(loanHistoryPagination.page, loanHistoryPagination.size)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Renew failed')
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
@@ -315,8 +571,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       const data = await res.json()
       if (res.ok) {
         showMessage('success', `Book returned successfully! ${data.data.fineAmount > 0 ? `Fine: $${data.data.fineAmount}` : ''}`)
-        fetchLoanHistory(loanHistoryPagination.page, loanHistoryPagination.size)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Return failed')
       }
@@ -355,7 +610,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         })
         setReturnBarcode('')
         showMessage('success', `Book returned successfully!${data.data.fineAmount > 0 ? ` Fine: $${data.data.fineAmount}` : ''}`)
-        onRefreshStats && onRefreshStats()
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         setReturnResult({ success: false, message: data.message || 'Return failed' })
         showMessage('error', data.message || 'Return failed')
@@ -543,14 +798,16 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
     setFinesLoading(true)
     const token = localStorage.getItem('token')
     try {
-      // 只显示未交罚金的逾期记录
+      // Only show unpaid fines after the book has been returned.
       const historyRes = await fetch(`${API_BASE}/loans/history?page=1&size=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const historyData = await historyRes.json()
       if (historyRes.ok) {
-        const overdueUnpaidLoans = (historyData.data?.list || []).filter(loan => loan.status === 'Overdue' && loan.finePaid === false)
-        setFines(overdueUnpaidLoans)
+        const returnedUnpaidLoans = (historyData.data?.list || []).filter(
+          (loan) => loan.status === 'Returned' && Number(loan.fineAmount || 0) > 0 && loan.finePaid === false
+        )
+        setFines(returnedUnpaidLoans)
       }
     } catch (err) {
       showMessage('error', 'Network error: ' + err.message)
@@ -559,19 +816,33 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   }
 
   // Pay fine
-  const handlePayFine = async (loanId) => {
+  const handleOpenFinePayment = (fine) => {
+    setSelectedFine(fine)
+  }
+
+  const handleCloseFinePayment = () => {
+    if (!payFineLoading) {
+      setSelectedFine(null)
+    }
+  }
+
+  const handlePayFine = async (fine) => {
     setPayFineLoading(true)
     const token = localStorage.getItem('token')
     try {
-      const res = await fetch(`${API_BASE}/loans/${loanId}/pay-fine`, {
+      const res = await fetch(`${API_BASE}/loans/${fine.id}/pay-fine`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount: Number(fine.fineAmount) })
       })
       const data = await res.json()
       if (res.ok) {
         showMessage('success', 'Fine paid successfully')
-        fetchFines()
-        onRefreshStats && onRefreshStats()
+        setSelectedFine(null)
+        refreshLoanStatusViews(loanHistoryPagination.page, loanHistoryPagination.size)
       } else {
         showMessage('error', data.message || 'Payment failed')
       }
@@ -616,51 +887,57 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
   // Render Dashboard
   const renderDashboard = () => (
-    <div className="content">
-      <div className="welcome-banner">
-        <div className="welcome-text">
-          <h2>Welcome, {user.name}!</h2>
-          <p>Today is {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}</p>
+      <div className="content">
+        <div className="welcome-banner">
+          <div className="welcome-text">
+            <h2>Welcome back, {user.name}!</h2>
+            <p>Here is your account summary.</p>
+          </div>
+          <div className="banner-icon">📚</div>
         </div>
-        <div className="banner-icon">📚</div>
-      </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon blue">📖</div>
-          <div className="stat-content">
-            <h3>{stats.totalBooks}</h3>
-            <p>Total Books</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">✅</div>
-          <div className="stat-content">
-            <h3>{stats.availableBooks}</h3>
-            <p>Available</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon orange">📋</div>
-          <div className="stat-content">
-            <h3>{stats.myLoans}</h3>
-            <p>My Loans</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">⏳</div>
-          <div className="stat-content">
-            <h3>{stats.pendingHolds}</h3>
-            <p>Pending Holds</p>
-          </div>
-        </div>
-      </div>
+        {dashLoading ? (
+            <div className="loading">Loading dashboard...</div>
+        ) : (
+            <div className="stats-grid">
+              <div className="stat-card" onClick={() => setCurrentPage('loans')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon blue">📋</div>
+                <div className="stat-content">
+                  <h3>{stats.myLoans}</h3>
+                  <p>Current Loans</p>
+                </div>
+              </div>
 
+              <div className="stat-card" onClick={() => setCurrentPage('loans')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon orange">⏳</div>
+                <div className="stat-content">
+                  <h3>{dashData.expiringSoon}</h3>
+                  <p>Expiring Soon (7 Days)</p>
+                </div>
+              </div>
 
-      <div className="table-section">
-        <h3>Recently Added Books</h3>
-        <table className="data-table">
-          <thead>
+              <div className="stat-card" onClick={() => setCurrentPage('fines')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon danger" style={{ backgroundColor: '#fee2e2', color: '#ef4444' }}>⚠️</div>
+                <div className="stat-content">
+                  <h3>{dashData.overdue}</h3>
+                  <p>Overdue Books</p>
+                </div>
+              </div>
+
+              <div className="stat-card" onClick={() => setCurrentPage('holds')} style={{cursor: 'pointer'}}>
+                <div className="stat-icon purple">📌</div>
+                <div className="stat-content">
+                  <h3>{dashData.holds}</h3>
+                  <p>Active Holds</p>
+                </div>
+              </div>
+            </div>
+        )}
+
+        <div className="table-section" style={{ marginTop: '30px' }}>
+          <h3>Recently Added Books</h3>
+          <table className="data-table">
+            <thead>
             <tr>
               <th>Title</th>
               <th>Author</th>
@@ -668,26 +945,26 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
               <th>Genre</th>
               <th>Status</th>
             </tr>
-          </thead>
-          <tbody>
+            </thead>
+            <tbody>
             {books.slice(0, 5).map((book) => (
-              <tr key={book.id}>
-                <td>{book.title}</td>
-                <td>{book.author}</td>
-                <td>{book.isbn}</td>
-                <td>{book.genre}</td>
-                <td>
+                <tr key={book.id}>
+                  <td>{book.title}</td>
+                  <td>{book.author}</td>
+                  <td>{book.isbn}</td>
+                  <td>{book.genre}</td>
+                  <td>
                   <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
                     {book.available ? 'Available' : 'Borrowed'}
                   </span>
-                </td>
-              </tr>
+                  </td>
+                </tr>
             ))}
-          </tbody>
-        </table>
-        {books.length === 0 && <div className="no-data">No data available</div>}
+            </tbody>
+          </table>
+          {books.length === 0 && <div className="no-data">No data available</div>}
+        </div>
       </div>
-    </div>
   )
 
   // Render Books Search (1.3, 1.4, 1.5)
@@ -718,21 +995,20 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
             <label>Genre:</label>
             <select value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)}>
               <option value="">All Genres</option>
+              <option value="Technology">Technology</option>
               <option value="Fiction">Fiction</option>
-              <option value="Non-Fiction">Non-Fiction</option>
               <option value="Science">Science</option>
               <option value="History">History</option>
-              <option value="Biography">Biography</option>
+              <option value="Management">Management</option>
             </select>
           </div>
           <div className="filter-group">
             <label>Language:</label>
             <select value={languageFilter} onChange={(e) => setLanguageFilter(e.target.value)}>
               <option value="">All Languages</option>
-              <option value="English">English</option>
               <option value="Chinese">Chinese</option>
-              <option value="Spanish">Spanish</option>
-              <option value="French">French</option>
+              <option value="English">English</option>
+              <option value="Others">Others</option>
             </select>
           </div>
           <div className="filter-group">
@@ -961,7 +1237,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         )}
 
         <div className="table-section">
-          <table className="data-table">
+          <table className="data-table reader-loans-table">
             <thead>
               <tr>
                 <th>Title</th>
@@ -999,26 +1275,27 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                          loan.status === 'Overdue' ? 'Overdue' : 'Returned'}
                       </span>
                     </td>
-                    <td>
-                      {loan.status === 'Borrowing' && (loan.renewalCount || 0) < 1 && (
-                        <button
-                          className="action-btn renew-btn"
-                          onClick={() => handleRenew(loan.id)}
-                          disabled={renewLoading}
-                        >
-                          {renewLoading ? 'Renewing...' : 'Renew'}
-                        </button>
-                      )}
-                      {(loan.status === 'Borrowing' || loan.status === 'Overdue') && (
-                        <button
-                          className="action-btn return-btn"
-                          onClick={() => handleReturn(loan.id)}
-                          disabled={returnLoading}
-                          style={{ marginLeft: '8px' }}
-                        >
-                          {returnLoading ? 'Returning...' : 'Return'}
-                        </button>
-                      )}
+                    <td className="actions-cell">
+                      <div className="loan-history-actions">
+                        {loan.status === 'Borrowing' && (loan.renewalCount || 0) < 1 && (
+                          <button
+                            className="action-btn renew-btn"
+                            onClick={() => handleRenew(loan.id)}
+                            disabled={renewLoading}
+                          >
+                            {renewLoading ? 'Renewing...' : 'Renew'}
+                          </button>
+                        )}
+                        {(loan.status === 'Borrowing' || loan.status === 'Overdue') && (
+                          <button
+                            className="action-btn return-btn"
+                            onClick={() => handleReturn(loan.id)}
+                            disabled={returnLoading}
+                          >
+                            {returnLoading ? 'Returning...' : 'Return'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1033,7 +1310,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
 
         {/* Pagination */}
         {loanHistory.length > 0 && (
-          <div className="pagination">
+          <div className="pagination reader-pagination">
             <button
               className="pagination-btn"
               onClick={() => fetchLoanHistory(loanHistoryPagination.page - 1, loanHistoryPagination.size)}
@@ -1094,7 +1371,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         )}
 
         <div className="table-section">
-          <table className="data-table">
+          <table className="data-table reader-wishlist-table">
             <thead>
               <tr>
                 <th>Title</th>
@@ -1195,7 +1472,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                       </span>
                     </td>
                     <td>{new Date(item.createdAt).toLocaleDateString('en-US')}</td>
-                    <td>
+                    <td className="actions-cell">
                       <div className="wishlist-actions">
                         {item.available && (
                           <button
@@ -1226,7 +1503,7 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
         </div>
 
         {wishlist.length > 0 && (
-          <div className="pagination">
+          <div className="pagination reader-pagination">
             <button
               className="pagination-btn"
               onClick={() => fetchWishlist(wishlistPagination.page - 1, wishlistPagination.size)}
@@ -1290,14 +1567,14 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
                     <td>{fine.bookTitle || 'Book unavailable'}</td>
                     <td>{fine.bookAuthor || 'N/A'}</td>
                     <td>{new Date(fine.dueDate).toLocaleDateString('en-US')}</td>
-                    <td>¥5.00</td>
+                    <td>¥{Number(fine.fineAmount || 0).toFixed(2)}</td>
                     <td>
                       <button
                         className="action-btn pay-btn"
-                        onClick={() => handlePayFine(fine.id)}
+                        onClick={() => handleOpenFinePayment(fine)}
                         disabled={payFineLoading}
                       >
-                        {payFineLoading ? 'Paying...' : 'Pay Fine'}
+                        {payFineLoading ? 'Processing...' : 'Pay with Alipay'}
                       </button>
                     </td>
                   </tr>
@@ -1310,6 +1587,56 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
             </tbody>
           </table>
         </div>
+
+        {selectedFine && (
+          <div className="modal-overlay" onClick={handleCloseFinePayment}>
+            <div className="modal-content fine-payment-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Pay Fine with Alipay</h3>
+                <button className="modal-close" onClick={handleCloseFinePayment}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="book-detail">
+                <div className="book-detail-info">
+                  <p className="book-detail-author">{selectedFine.bookTitle || 'Book unavailable'}</p>
+                  <div className="book-detail-grid">
+                    <div className="book-detail-item"><strong>Author:</strong> {selectedFine.bookAuthor || 'N/A'}</div>
+                    <div className="book-detail-item"><strong>Due Date:</strong> {new Date(selectedFine.dueDate).toLocaleDateString('en-US')}</div>
+                    <div className="book-detail-item"><strong>Amount:</strong> ¥{Number(selectedFine.fineAmount || 0).toFixed(2)}</div>
+                    <div className="book-detail-item book-detail-desc">
+                      <strong>How to pay:</strong> Scan the QR code with Alipay, complete the payment, then click I Have Paid.
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', margin: '24px 0 20px' }}>
+                    <img
+                      src="/alipay-qr.png"
+                      alt="Alipay QR Code"
+                      style={{ width: '240px', maxWidth: '100%', borderRadius: '16px', border: '1px solid #e5e7eb' }}
+                    />
+                  </div>
+                  <div className="form-actions" style={{ justifyContent: 'center' }}>
+                    <button
+                      className="save-btn"
+                      onClick={() => handlePayFine(selectedFine)}
+                      disabled={payFineLoading}
+                    >
+                      {payFineLoading ? 'Confirming...' : 'I Have Paid'}
+                    </button>
+                    <button
+                      type="button"
+                      className="cancel-btn"
+                      onClick={handleCloseFinePayment}
+                      disabled={payFineLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1402,6 +1729,373 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       </div>
     )
   }
+
+  // 渲染系统公告
+  const renderAnnouncements = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>📢 System Announcements</h2>
+        </div>
+
+        {selectedAnnouncement ? (
+            <div className="profile-card">
+              <button className="action-btn" onClick={() => setSelectedAnnouncement(null)} style={{marginBottom: '20px'}}>← Back to List</button>
+              <h3 style={{fontSize: '24px', fontWeight: 'bold'}}>{selectedAnnouncement.title}</h3>
+              <p style={{color: '#666', fontSize: '14px', marginBottom: '20px'}}>Published: {new Date(selectedAnnouncement.publishedAt).toLocaleString()}</p>
+              <div style={{lineHeight: '1.6', whiteSpace: 'pre-wrap'}}>{selectedAnnouncement.content}</div>
+            </div>
+        ) : (
+            <div className="table-section">
+              <table className="data-table">
+                <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+                </thead>
+                <tbody>
+                {announcementsLoading ? (
+                    <tr><td colSpan="4" className="no-data">Loading...</td></tr>
+                ) : announcements.length > 0 ? (
+                    announcements.map((ann) => (
+                        <tr key={ann.id}>
+                          <td style={{fontWeight: '500'}}>{ann.title}</td>
+                          <td><span className="status-badge info">{ann.type}</span></td>
+                          <td>{new Date(ann.publishedAt).toLocaleDateString()}</td>
+                          <td>
+                            <button className="action-btn" onClick={() => setSelectedAnnouncement(ann)}>View Detail</button>
+                          </td>
+                        </tr>
+                    ))
+                ) : (
+                    <tr><td colSpan="4" className="no-data">No announcements found.</td></tr>
+                )}
+                </tbody>
+              </table>
+            </div>
+        )}
+      </div>
+  );
+
+  // 渲染新书通报
+  const renderNewBooks = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>✨ New Arrivals</h2>
+          <p>Explore the latest books added to our collection this month.</p>
+        </div>
+
+        {bookDetail && selectedBook && (
+            <div className="modal-overlay book-detail-modal" onClick={() => { setSelectedBook(null); setBookDetail(null); }}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <button className="modal-close" onClick={() => { setSelectedBook(null); setBookDetail(null); }}>×</button>
+                <div className="book-detail">
+                  <div className="book-detail-info">
+                    <h3>{bookDetail.title}</h3>
+                    <p className="book-detail-author">Author: {bookDetail.author}</p>
+                    <div className="book-detail-grid">
+                      <div className="book-detail-item"><strong>ISBN:</strong> {bookDetail.isbn}</div>
+                      <div className="book-detail-item"><strong>Genre:</strong> {bookDetail.genre}</div>
+                      <div className="book-detail-item"><strong>Language:</strong> {bookDetail.language}</div>
+                      <div className="book-detail-item"><strong>Location:</strong> {bookDetail.shelfLocation || 'N/A'}</div>
+                      <div className="book-detail-item"><strong>Available Copies:</strong> {bookDetail.availableCopies}</div>
+                      <div className="book-detail-item">
+                        <strong>Status:</strong>
+                        <span className={`status-badge ${bookDetail.available ? 'success' : 'danger'}`}>
+                      {bookDetail.available ? 'Available' : 'Borrowed'}
+                    </span>
+                      </div>
+                      {bookDetail.averageRating && (
+                          <div className="book-detail-item"><strong>Avg Rating:</strong> ⭐ {bookDetail.averageRating.toFixed(1)}</div>
+                      )}
+                      {bookDetail.description && (
+                          <div className="book-detail-item book-detail-desc"><strong>Description:</strong> {bookDetail.description}</div>
+                      )}
+                    </div>
+                    <div className="book-actions">
+                      {bookDetail.available ? (
+                          <button
+                              className="borrow-btn"
+                              onClick={() => handleBorrow(bookDetail.id)}
+                              disabled={borrowLoading}
+                          >
+                            {borrowLoading ? 'Borrowing...' : '📖 Borrow Now'}
+                          </button>
+                      ) : (
+                          <button
+                              className="hold-btn"
+                              onClick={() => handleHoldBook(bookDetail.id)}
+                              disabled={holdLoading}
+                          >
+                            {holdLoading ? 'Holding...' : '⏳ Hold Book'}
+                          </button>
+                      )}
+                      <button
+                          className="wishlist-btn"
+                          onClick={() => handleAddToWishlist(bookDetail.id)}
+                          disabled={wishlistAddLoading}
+                      >
+                        {wishlistAddLoading ? 'Adding...' : '❤️ Add to Wishlist'}
+                      </button>
+                    </div>
+
+                    {/* Rating Section */}
+                    <div className="rating-section">
+                      <h4>Rate this book</h4>
+                      <div className="rating-stars">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                                key={star}
+                                className={`star-btn ${userRating >= star ? 'active' : ''}`}
+                                onClick={() => handleRateBook(bookDetail.id, star)}
+                                disabled={ratingLoading}
+                            >
+                              ⭐
+                            </button>
+                        ))}
+                      </div>
+                      {userRating && <p>Your rating: {userRating} stars</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+        )}
+        {/* --- 弹窗代码结束 --- */}
+
+        <div className="books-grid">
+          {newBooksLoading ? (
+              <div className="no-data">Loading...</div>
+          ) : newBooks.length > 0 ? (
+              newBooks.map((book) => (
+                  <div key={book.id} className="book-card" onClick={() => handleViewDetail(book.id)} style={{cursor: 'pointer'}}>
+                    <div className="book-cover">📚</div>
+                    <div className="book-info">
+                      <h3>{book.title}</h3>
+                      <p className="book-author">{book.author}</p>
+                      <div className="book-status">
+                  <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
+                    {book.available ? 'Available' : 'Borrowed'}
+                  </span>
+                        <span className="date-badge" style={{fontSize: '12px', color: '#666', marginLeft: '8px'}}>New!</span>
+                      </div>
+                    </div>
+                  </div>
+              ))
+          ) : (
+              <div className="no-data">No new books this month.</div>
+          )}
+        </div>
+      </div>
+  );
+
+  // 渲染资源荐购页面 (3.2)
+  const renderRecommend = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>💡 Book Recommendation</h2>
+          <p>Suggest new books for the library to purchase.</p>
+        </div>
+
+        {message.text && (
+            <div className={`message ${message.type}`}>
+              {message.text}
+            </div>
+        )}
+
+        {/* 提交表单区域 */}
+        <div className="profile-card" style={{ marginBottom: '30px' }}>
+          <h3 style={{ marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>Submit a Request</h3>
+          <form onSubmit={handleAcqSubmit} className="profile-form">
+            <div className="form-group">
+              <label>ISBN <span style={{color: '#ef4444'}}>*</span></label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  className="profile-input"
+                  required
+                  placeholder="Enter 10 or 13 digit ISBN"
+                  value={acqForm.isbn}
+                  onChange={(e) => setAcqForm({ ...acqForm, isbn: e.target.value, title: '', author: '' })}
+                  onBlur={() => {
+                    if (acqForm.isbn.trim()) {
+                      handleAcqLookupIsbn(acqForm.isbn);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="save-btn"
+                  style={{ minWidth: '120px' }}
+                  onClick={() => handleAcqLookupIsbn(acqForm.isbn)}
+                  disabled={acqLookupLoading || !acqForm.isbn.trim()}
+                >
+                  {acqLookupLoading ? 'Searching...' : 'Auto Fill'}
+                </button>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Title</label>
+              <input
+                type="text"
+                className="profile-input"
+                placeholder="Auto-filled from ISBN"
+                value={acqForm.title}
+                readOnly
+              />
+            </div>
+            <div className="form-group">
+              <label>Author</label>
+              <input
+                type="text"
+                className="profile-input"
+                placeholder="Auto-filled from ISBN"
+                value={acqForm.author}
+                readOnly
+              />
+            </div>
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Reason / Note</label>
+              <textarea className="profile-input" rows="3" placeholder="Why should we buy this book?"
+                        value={acqForm.reason} onChange={(e) => setAcqForm({...acqForm, reason: e.target.value})}></textarea>
+            </div>
+            <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="save-btn" disabled={acqSubmitLoading}>
+                {acqSubmitLoading ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* 历史记录区域 */}
+        <div className="table-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3>My Requests</h3>
+            <select className="filter-select" value={acqStatusFilter} onChange={(e) => {
+              setAcqStatusFilter(e.target.value);
+              fetchAcquisitions(e.target.value);
+            }}>
+              <option value="">All Status</option>
+              <option value="PENDING">Pending</option>
+              <option value="ACCEPTED">Accepted</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+
+          <table className="data-table">
+            <thead>
+            <tr>
+              <th>Title</th>
+              <th>Author</th>
+              <th>Status</th>
+              <th>Submitted Date</th>
+            </tr>
+            </thead>
+            <tbody>
+            {acquisitionsLoading ? (
+                <tr><td colSpan="4" className="no-data">Loading...</td></tr>
+            ) : acquisitions.length > 0 ? (
+                acquisitions.map(req => (
+                    <tr key={req.id}>
+                      <td style={{fontWeight: '500'}}>{req.title}</td>
+                      <td>{req.author || '-'}</td>
+                      <td>
+                    <span className={`status-badge ${
+                        req.status === 'ACCEPTED' ? 'success' :
+                            req.status === 'REJECTED' ? 'danger' : 'warning'
+                    }`}>
+                      {req.status}
+                    </span>
+                      </td>
+                      <td>{new Date(req.createdAt).toLocaleDateString('en-US')}</td>
+                    </tr>
+                ))
+            ) : (
+                <tr><td colSpan="4" className="no-data">No recommendation records found.</td></tr>
+            )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+  );
+
+  // 渲染借阅排行榜页面 (3.5)
+  const renderRanking = () => (
+      <div className="content">
+        <div className="page-header">
+          <h2>🏆 Borrowing Leaderboard</h2>
+          <p>Discover the most popular books in our library.</p>
+        </div>
+
+        <div className="table-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3>Top 10 Books</h3>
+            {/* 时间范围筛选框，强制对齐 SPM 需求 */}
+            <select className="filter-select" value={rankingPeriod} onChange={(e) => {
+              setRankingPeriod(e.target.value);
+              fetchRankings(e.target.value);
+            }}>
+              <option value="month">This Month</option>
+              <option value="3months">Last 3 Months</option>
+              <option value="year">Last Year</option>
+            </select>
+          </div>
+
+          <table className="data-table">
+            <thead>
+            <tr>
+              <th style={{width: '60px', textAlign: 'center'}}>Rank</th>
+              <th style={{width: '60px'}}>Cover</th>
+              <th>Title</th>
+              <th>Author</th>
+              <th style={{width: '100px', textAlign: 'center'}}>Borrows</th>
+            </tr>
+            </thead>
+            <tbody>
+            {rankingsLoading ? (
+                <tr><td colSpan="5" className="no-data">Loading...</td></tr>
+            ) : rankings.length > 0 ? (
+                rankings.map((book, index) => (
+                    <tr key={book.bookId || index}>
+                      <td style={{textAlign: 'center'}}>
+                        {/* 给前三名加点“土豪金/白银/青铜”的特效 */}
+                        <span className="status-badge" style={{
+                          backgroundColor: index === 0 ? '#fef08a' : index === 1 ? '#e2e8f0' : index === 2 ? '#fed7aa' : '#f3f4f6',
+                          color: index === 0 ? '#854d0e' : index === 1 ? '#475569' : index === 2 ? '#9a3412' : '#374151',
+                          fontWeight: 'bold', fontSize: '14px', width: '28px', display: 'inline-block', textAlign: 'center'
+                        }}>
+                      {index + 1}
+                    </span>
+                      </td>
+                      <td style={{ fontSize: '24px' }}>📚</td>
+                      <td>
+                        {/* 书名可点击，触发借阅/详情弹窗 */}
+                        <span
+                            onClick={() => handleViewDetail(book.bookId)}
+                            style={{ fontWeight: '600', color: '#2563eb', cursor: 'pointer' }}
+                            className="book-title-clickable hover:underline"
+                        >
+                      {book.bookTitle}
+                    </span>
+                      </td>
+                      <td>{book.bookAuthor || '-'}</td>
+                      <td style={{textAlign: 'center'}}>
+                    <span style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '16px' }}>
+                      {book.loanCount}
+                    </span>
+                      </td>
+                    </tr>
+                ))
+            ) : (
+                <tr><td colSpan="5" className="no-data">No ranking data available for this period.</td></tr>
+            )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+  );
 
   // Render Return Book page
   const renderReturnBook = () => {
@@ -1496,10 +2190,16 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
   }
 
   switch (currentPage) {
+    case 'announcements':
+      return renderAnnouncements()
+    case 'new-books':
+      return renderNewBooks()
     case 'dashboard':
       return renderDashboard()
     case 'books':
       return renderBooks()
+    case 'ranking':
+      return renderRanking()
     case 'loans':
       return renderLoans()
     case 'holds':
@@ -1510,6 +2210,8 @@ const ReaderDashboard = ({ user, stats, books, loans, currentPage, setCurrentPag
       return renderWishlist()
     case 'fines':
       return renderFines()
+    case 'recommend':
+      return renderRecommend()
     case 'profile':
       return renderProfile()
     default:

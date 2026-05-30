@@ -384,37 +384,37 @@ async function main() {
   console.log("Seeded config:", config);
 
   const announcementsData = [
-    {
-      title: "图书馆春节闭馆通知",
-      content: "尊敬的读者：\n\n春节期间（2月10日-2月17日）图书馆将闭馆，暂停所有借阅服务。2月18日恢复正常开放。\n\n给您带来的不便，敬请谅解。\n\n图书馆管理处",
-      type: "CLOSURE",
-      publishedAt: new Date("2026-02-05T10:00:00Z"),
-    },
-    {
-      title: "新书推荐活动",
-      content: "本月新增科技类图书50余册，包括《人工智能导论》、《深度学习实战》等热门书籍。欢迎广大读者前来借阅！\n\n活动地点：一楼大厅\n活动时间：3月1日-3月31日",
-      type: "ACTIVITY",
-      publishedAt: new Date("2026-03-01T09:00:00Z"),
-    },
-    {
-      title: "借阅规则调整通知",
-      content: "自2026年4月1日起，图书借阅期限由原来的30天调整为45天，续借次数仍为1次。\n\n逾期罚款标准保持不变：每天0.5元。\n\n请各位读者合理安排借阅时间。",
-      type: "RULE_CHANGE",
-      publishedAt: new Date("2026-03-25T14:30:00Z"),
-    },
-    {
-      title: "周末开放时间调整",
-      content: "为方便读者利用周末时间阅读，自4月起，图书馆周末开放时间调整为：\n\n周六：9:00-21:00\n周日：9:00-18:00\n\n工作日开放时间不变：8:00-22:00",
-      type: "TIME_CHANGE",
-      publishedAt: new Date("2026-03-28T16:00:00Z"),
-    },
-    {
-      title: "读书分享会邀请",
-      content: "图书馆将于4月15日举办读书分享会，主题：'科技与人文的融合'。\n\n特邀嘉宾：张教授（计算机科学系）\n地点：三楼报告厅\n时间：14:00-16:00\n\n欢迎感兴趣的读者报名参加！",
-      type: "ACTIVITY",
-      publishedAt: new Date("2026-04-01T10:00:00Z"),
-    },
-  ];
+  {
+    title: "Library Spring Festival Closure Notice",
+    content: "Dear readers,\n\nDuring the Spring Festival (February 10 - February 17), the library will be closed and all borrowing services suspended. Normal operations will resume on February 18.\n\nWe apologize for any inconvenience caused.\n\nLibrary Management Office",
+    type: "CLOSURE",
+    publishedAt: new Date("2026-02-05T10:00:00Z"),
+  },
+  {
+    title: "New Book Recommendation Event",
+    content: "This month, over 50 new technology books have been added, including popular titles such as 'Introduction to Artificial Intelligence' and 'Deep Learning in Action'. Readers are welcome to borrow!\n\nLocation: First floor hall\nTime: March 1 - March 31",
+    type: "ACTIVITY",
+    publishedAt: new Date("2026-03-01T09:00:00Z"),
+  },
+  {
+    title: "Notification of Borrowing Rule Adjustment",
+    content: "Effective April 1, 2026, the loan period for books will be extended from 30 days to 45 days. The renewal limit remains once.\n\nThe overdue fine remains unchanged: 0.5 yuan per day.\n\nPlease arrange your borrowing schedule accordingly.",
+    type: "RULE_CHANGE",
+    publishedAt: new Date("2026-03-25T14:30:00Z"),
+  },
+  {
+    title: "Weekend Opening Hours Adjustment",
+    content: "To facilitate readers' weekend reading, starting from April, the library's weekend opening hours will be adjusted as follows:\n\nSaturday: 9:00-21:00\nSunday: 9:00-18:00\n\nWeekday opening hours remain unchanged: 8:00-22:00",
+    type: "TIME_CHANGE",
+    publishedAt: new Date("2026-03-28T16:00:00Z"),
+  },
+  {
+    title: "Reading Sharing Session Invitation",
+    content: "The library will hold a reading sharing session on April 15. Theme: 'The Integration of Technology and Humanities'.\n\nSpecial guest: Professor Zhang (Department of Computer Science)\nLocation: Third floor lecture hall\nTime: 14:00-16:00\n\nInterested readers are welcome to sign up!",
+    type: "ACTIVITY",
+    publishedAt: new Date("2026-04-01T10:00:00Z"),
+  },
+];
 
   const announcements = await prisma.announcement.createMany({
     data: announcementsData,

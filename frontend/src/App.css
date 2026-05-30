@@ -544,14 +544,30 @@ body {
   transition: all 0.2s;
 }
 
-.wishlist-actions {
+.actions-cell {
+  vertical-align: middle;
+}
+
+.loan-history-actions {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 10px;
 }
 
+.loan-history-actions .action-btn {
+  width: 100px;
+}
+
+.wishlist-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .wishlist-actions .action-btn {
-  flex: 1;
-  min-width: 0;
+  min-width: 104px;
 }
 
 .renew-btn {
@@ -602,6 +618,60 @@ body {
 .pay-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(128, 90, 213, 0.3);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #edf2f7;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  min-width: 110px;
+  padding: 10px 16px;
+  border: 1px solid #d7e0ea;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.12);
+}
+
+.pagination-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.pagination-info {
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.reader-loans-table th:last-child,
+.reader-loans-table td:last-child {
+  width: 164px;
+  text-align: center;
+}
+
+.reader-wishlist-table th:last-child,
+.reader-wishlist-table td:last-child {
+  width: 250px;
 }
 
 /* 状态标签 */
@@ -1364,6 +1434,59 @@ body {
 
 .modal-body {
   padding: 24px;
+}
+
+.fine-payment-modal {
+  max-width: 900px;
+  width: min(92vw, 900px);
+}
+
+.fine-payment-modal .modal-body {
+  padding: 28px 32px 30px;
+}
+
+.fine-payment-modal .book-detail {
+  padding: 0;
+}
+
+.fine-payment-modal .book-detail-author {
+  margin-bottom: 24px;
+}
+
+.add-book-modal .modal-body {
+  padding: 28px 32px 24px;
+}
+
+.isbn-lookup-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.isbn-lookup-row input {
+  flex: 1;
+}
+
+.isbn-lookup-btn {
+  padding: 10px 18px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.isbn-lookup-btn:hover:not(:disabled) {
+  background-color: #0b6ee0;
+}
+
+.isbn-lookup-btn:disabled {
+  background-color: #cbd5e1;
+  cursor: not-allowed;
 }
 
 .modal-footer {
@@ -2669,6 +2792,16 @@ body {
 
   .content {
     padding: 20px 16px;
+  }
+
+  .add-book-modal .modal-body,
+  .fine-payment-modal .modal-body {
+    padding: 20px 16px 18px;
+  }
+
+  .isbn-lookup-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

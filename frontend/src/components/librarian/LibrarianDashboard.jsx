@@ -1433,37 +1433,28 @@ const LibrarianDashboard = ({
   // Add Book Modal
   const renderAddModal = () => (
     <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content add-book-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>Add New Book</h3>
           <button className="modal-close" onClick={() => setShowAddModal(false)}>×</button>
         </div>
-        <form onSubmit={handleAddBook}>
+        <form onSubmit={handleAddBook} className="modal-body">
           {addForm.localError && <div className="error-message" style={{ marginBottom: '15px' }}>{addForm.localError}</div>}
           <div className="form-group">
             <label>ISBN *</label>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="isbn-lookup-row">
               <input
                 type="text"
                 required
                 value={addForm.isbn}
                 onChange={(e) => setAddForm({ ...addForm, isbn: e.target.value })}
                 placeholder="Enter ISBN"
-                style={{ flex: 1 }}
               />
               <button
                 type="button"
                 onClick={() => handleLookupIsbn(addForm.isbn)}
                 disabled={lookupLoading || !addForm.isbn}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: lookupLoading ? '#ccc' : '#007bff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: lookupLoading ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
+                className="isbn-lookup-btn"
               >
                 {lookupLoading ? 'Searching...' : 'Lookup'}
               </button>

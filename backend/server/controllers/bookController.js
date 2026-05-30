@@ -1,5 +1,6 @@
 const bookService = require("../services/bookService");
 const bookRankingService = require("../services/bookRankingService");
+const scraperService = require("../services/scraperService");
 const { sendSuccess } = require("../lib/response");
 
 async function listBooks(req, res, next) {
