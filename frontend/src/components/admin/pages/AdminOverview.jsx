@@ -177,30 +177,48 @@ const AdminOverview = ({ user, onNavigate }) => {
 
         <div className="quick-actions-card">
           <h3>Quick Actions</h3>
-          <div className="quick-actions-grid">
+          <div className="quick-actions-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <button
               className="quick-action-btn green"
               onClick={() => onNavigate(ADMIN_PAGES.USER_MANAGE)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
             >
               🧩 Users Manage
             </button>
             <button
               className="quick-action-btn blue"
               onClick={() => onNavigate(ADMIN_PAGES.SYSTEM_CONFIG)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
             >
               ⚙️ System Config
             </button>
             <button
               className="quick-action-btn orange"
               onClick={() => onNavigate(ADMIN_PAGES.AUDIT_LOGS)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
             >
               📜 Audit Logs
             </button>
             <button
-              className="quick-action-btn gray"
-              onClick={() => onNavigate(ADMIN_PAGES.OVERVIEW)}
+              className="quick-action-btn purple"
+              onClick={() => onNavigate(ADMIN_PAGES.BACKUP_MANAGE)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
             >
-              🏠 Refresh
+              💾 Backup Manage
+            </button>
+            <button
+              className="quick-action-btn blue"
+              onClick={() => onNavigate(ADMIN_PAGES.ANNOUNCEMENT_MANAGE)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
+            >
+              📢 Announcements
+            </button>
+            <button
+              className="quick-action-btn green"
+              onClick={() => onNavigate(ADMIN_PAGES.REPORTS)}
+              style={{ padding: '24px 20px', fontSize: '15px' }}
+            >
+              📊 Reports
             </button>
           </div>
         </div>
