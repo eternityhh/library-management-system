@@ -69,5 +69,19 @@ export const adminApi = {
   getDashboardOverview: () => request('/dashboard/overview'),
   getLoanTrends: (period = '30d') => request(`/dashboard/loan-trends?period=${period}`),
   getPopularBooks: (limit = 10) => request(`/dashboard/popular-books?limit=${limit}`),
-  getRecentActivities: (limit = 20) => request(`/dashboard/recent-activities?limit=${limit}`)
+  getRecentActivities: (limit = 20) => request(`/dashboard/recent-activities?limit=${limit}`),
+
+  // Backup
+  createBackup: () => request('/backup', { method: 'POST' }),
+  listBackups: (params) => request(`/backup${qs(params)}`),
+  deleteBackup: (id) => request(`/backup/${id}`, { method: 'DELETE' }),
+  getBackupDownloadUrl: (id) => `${API_BASE}/backup/${id}/download`,
+
+  // Announcement
+  listAnnouncements: (params) => request(`/announcements${qs(params)}`),
+  createAnnouncement: (body) => request('/announcements', { method: 'POST', body: JSON.stringify(body) }),
+  updateAnnouncement: (id, body) => request(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteAnnouncement: (id) => request(`/announcements/${id}`, { method: 'DELETE' }),
+  publishAnnouncement: (id) => request(`/announcements/${id}/publish`, { method: 'PUT' }),
+  unpublishAnnouncement: (id) => request(`/announcements/${id}/unpublish`, { method: 'PUT' })
 }
