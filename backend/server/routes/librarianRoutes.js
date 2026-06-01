@@ -11,6 +11,12 @@ const router = express.Router();
 // All librarian routes require authentication and LIBRARIAN role
 router.use(requireAuth, requireRole(["LIBRARIAN", "ADMIN"]));
 
+// Barcode / scanner lookup
+router.get("/barcodes/:code", librarianController.lookupBarcode);
+
+// Fine Dashboard
+router.get("/fine-dashboard", librarianController.getFineDashboard);
+
 // L1.3 - View all books with status
 router.get("/books", librarianController.viewBooks);
 
@@ -33,6 +39,7 @@ router.get("/books/lookup", librarianController.lookupBook);
 router.get("/loans", loanController.getLibrarianLoans);
 router.post("/loans/checkout", loanController.librarianCheckoutLoan);
 router.post("/loans/return", loanController.librarianReturnLoan);
+router.post("/loans/:id/pay-fine", loanController.librarianPayFine);
 
 // L2.3 - Hold management
 router.get("/holds", holdController.getLibrarianHolds);

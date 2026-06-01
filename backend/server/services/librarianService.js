@@ -146,6 +146,67 @@ async function scrapeKongfz(isbn) {
 // Valid genre and language values from Prisma schema
 const VALID_GENRES = ["Technology", "Fiction", "Science", "History", "Management"];
 const VALID_LANGUAGES = ["Chinese", "English", "Others"];
+const ACTIVE_LOAN_STATUSES = ["Borrowing", "Overdue"];
+
+function buildIsbnSearchConditions(keyword) {
+  const compactKeyword = keyword.replace(/[\s-]/g, "");
+  const conditions = [{ isbn: { contains: keyword } }];
+
+  if (compactKeyword && compactKeyword !== keyword) {
+    conditions.push({ isbn: { contains: compactKeyword } });
+  }
+
+  return conditions;
+}
+
+function normalizeBarcodeValue(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const withoutPrefix = raw.replace(/^(isbn|book|bookid|book-id)\s*[:#-]\s*/i, "").trim();
+
+  return {
+    raw,
+    normalized: withoutPrefix,
+    compact: withoutPrefix.replace(/[\s-]/g, ""),
+  };
+}
+
+function getStartOfWeek(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  return start;
+}
+
+function getStartOfYear(date) {
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+function parseAuditDetail(detail) {
+  if (!detail) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(detail);
+  } catch (error) {
+    return {};
+  }
+}
+
+async function syncOverdueLoans() {
+  await prisma.loan.updateMany({
+    where: {
+      status: "Borrowing",
+      returnDate: null,
+      dueDate: { lt: new Date() },
+    },
+    data: {
+      status: "Overdue",
+    },
+  });
+}
 
 function buildBookCopyCreateManyData(book, copyCount) {
   return Array.from({ length: copyCount }, (_, index) => ({
@@ -317,10 +378,29 @@ async function viewBooks(query) {
 
   // Keyword search
   if (query.keyword && typeof query.keyword === "string") {
-    where.OR = [
-      { title: { contains: query.keyword } },
-      { author: { contains: query.keyword } },
-    ];
+    const keyword = query.keyword.trim();
+    const type = typeof query.type === "string" ? query.type.trim() : "";
+
+    if (!keyword) {
+      throw new AppError(400, "Invalid search keyword");
+    }
+
+    if (type && !["title", "author", "isbn"].includes(type)) {
+      throw new AppError(400, "Invalid search type");
+    }
+
+    where.OR =
+      type === "title"
+        ? [{ title: { contains: keyword } }]
+        : type === "author"
+          ? [{ author: { contains: keyword } }]
+          : type === "isbn"
+            ? buildIsbnSearchConditions(keyword)
+            : [
+                { title: { contains: keyword } },
+                { author: { contains: keyword } },
+                ...buildIsbnSearchConditions(keyword),
+              ];
   }
 
   // Genre filter
@@ -349,6 +429,185 @@ async function viewBooks(query) {
     page,
     size,
     list: books.map(toBookSummary),
+  };
+}
+
+/**
+ * Look up a book from a scanned barcode value.
+ *
+ * Barcode scanners usually submit plain text. In this project the barcode value
+ * is treated as either a Book ID or ISBN.
+ */
+async function lookupBarcode(code) {
+  const { raw, normalized, compact } = normalizeBarcodeValue(code);
+
+  if (!raw || !normalized) {
+    throw new AppError(400, "Barcode is required");
+  }
+
+  const isbnCandidates = Array.from(new Set([normalized, compact].filter(Boolean)));
+  const book = await prisma.book.findFirst({
+    where: {
+      OR: [
+        { id: normalized },
+        ...isbnCandidates.map((isbn) => ({ isbn })),
+      ],
+    },
+  });
+
+  if (!book) {
+    throw new AppError(404, "Book not found for this barcode");
+  }
+
+  return {
+    ...toBookDetail(book),
+    barcode: raw,
+    barcodeType: book.id === normalized ? "BOOK_ID" : "ISBN",
+  };
+}
+
+/**
+ * Fine Dashboard metrics for librarians.
+ */
+async function getFineDashboard() {
+  await syncOverdueLoans();
+
+  const now = new Date();
+  const startOfWeek = getStartOfWeek(now);
+  const startOfYear = getStartOfYear(now);
+  const unpaidFineWhere = {
+    fineAmount: { gt: 0 },
+    finePaid: false,
+    fineForgiven: false,
+  };
+
+  const [bookCopySummary, bookCopyCount, checkedOutBooks, overdueBooks, unpaidFineLoans, paidFineLogs] = await Promise.all([
+    prisma.book.aggregate({
+      _sum: {
+        availableCopies: true,
+      },
+    }),
+    prisma.bookCopy.count(),
+    prisma.loan.count({
+      where: {
+        status: {
+          in: ACTIVE_LOAN_STATUSES,
+        },
+      },
+    }),
+    prisma.loan.count({
+      where: {
+        status: "Overdue",
+      },
+    }),
+    prisma.loan.findMany({
+      where: unpaidFineWhere,
+      include: {
+        book: true,
+        user: true,
+      },
+      orderBy: [
+        { dueDate: "asc" },
+        { returnDate: "desc" },
+      ],
+    }),
+    prisma.auditLog.findMany({
+      where: {
+        action: "PAY_FINE",
+        entity: "Loan",
+      },
+      include: {
+        user: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+  ]);
+
+  const paidLoanIds = Array.from(new Set(paidFineLogs.map((log) => log.entityId).filter(Boolean)));
+  const paidLoans = paidLoanIds.length
+    ? await prisma.loan.findMany({
+        where: {
+          id: {
+            in: paidLoanIds,
+          },
+        },
+        include: {
+          book: true,
+          user: true,
+        },
+      })
+    : [];
+  const paidLoanMap = new Map(paidLoans.map((loan) => [loan.id, loan]));
+
+  const fineItems = unpaidFineLoans.map((loan) => ({
+    loanId: loan.id,
+    userId: loan.userId,
+    userName: loan.user?.name || "Unknown user",
+    userEmail: loan.user?.email || "-",
+    studentId: loan.user?.studentId || "-",
+    bookId: loan.bookId,
+    bookTitle: loan.book?.title || "This book is no longer available",
+    isbn: loan.book?.isbn || "-",
+    dueDate: formatDateTime(loan.dueDate),
+    returnDate: loan.returnDate ? formatDateTime(loan.returnDate) : null,
+    fineAmount: Number(loan.fineAmount),
+    status: loan.status,
+  }));
+
+  const paidFineItems = paidFineLogs.map((log) => {
+    const detail = parseAuditDetail(log.detail);
+    const loan = paidLoanMap.get(log.entityId);
+    const amount = Number(detail.amount ?? loan?.fineAmount ?? 0);
+
+    return {
+      paymentId: log.id,
+      loanId: log.entityId,
+      userId: loan?.userId || detail.borrowerId || "-",
+      userName: loan?.user?.name || "Unknown user",
+      userEmail: loan?.user?.email || "-",
+      studentId: loan?.user?.studentId || "-",
+      bookId: loan?.bookId || "-",
+      bookTitle: loan?.book?.title || "This book is no longer available",
+      isbn: loan?.book?.isbn || "-",
+      paidAmount: amount,
+      paidAt: formatDateTime(log.createdAt),
+      paidAtRaw: log.createdAt,
+      method: detail.method || "SIMULATED",
+      collectorName: log.user?.name || "Self service",
+      collectorEmail: log.user?.email || "-",
+      alipayTradeNo: detail.alipayTradeNo || null,
+      outTradeNo: detail.outTradeNo || null,
+    };
+  });
+
+  const booksInLibrary = bookCopySummary._sum.availableCopies || 0;
+  const totalBooks = Math.max(bookCopyCount, booksInLibrary + checkedOutBooks);
+  const unpaidFineTotal = fineItems.reduce((sum, item) => sum + item.fineAmount, 0);
+  const paidFineTotal = paidFineItems.reduce((sum, item) => sum + item.paidAmount, 0);
+  const paidThisWeek = paidFineItems
+    .filter((item) => item.paidAtRaw >= startOfWeek)
+    .reduce((sum, item) => sum + item.paidAmount, 0);
+  const paidThisYear = paidFineItems
+    .filter((item) => item.paidAtRaw >= startOfYear)
+    .reduce((sum, item) => sum + item.paidAmount, 0);
+
+  return {
+    totalBooks,
+    booksInLibrary,
+    checkedOutBooks,
+    overdueBooks,
+    unpaidFineTotal,
+    paidFineTotal,
+    paidThisWeek,
+    paidThisYear,
+    fineDueToday: unpaidFineTotal,
+    fineItemCount: fineItems.length,
+    fineItems,
+    paidFineItemCount: paidFineItems.length,
+    paidFineItems,
+    generatedAt: formatDateTime(new Date()),
   };
 }
 
@@ -484,6 +743,8 @@ module.exports = {
   addBook,
   editBook,
   viewBooks,
+  lookupBarcode,
+  getFineDashboard,
   deleteBook,
   scanBook,
   scrapeKongfz,
