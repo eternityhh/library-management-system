@@ -170,6 +170,31 @@ function normalizeBarcodeValue(value) {
   };
 }
 
+function getStartOfWeek(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  return start;
+}
+
+function getStartOfYear(date) {
+  return new Date(date.getFullYear(), 0, 1);
+}
+
+function parseAuditDetail(detail) {
+  if (!detail) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(detail);
+  } catch (error) {
+    return {};
+  }
+}
+
 async function syncOverdueLoans() {
   await prisma.loan.updateMany({
     where: {
@@ -447,18 +472,22 @@ async function lookupBarcode(code) {
 async function getFineDashboard() {
   await syncOverdueLoans();
 
+  const now = new Date();
+  const startOfWeek = getStartOfWeek(now);
+  const startOfYear = getStartOfYear(now);
   const unpaidFineWhere = {
     fineAmount: { gt: 0 },
     finePaid: false,
     fineForgiven: false,
   };
 
-  const [bookCopySummary, checkedOutBooks, overdueBooks, unpaidFineLoans] = await Promise.all([
+  const [bookCopySummary, bookCopyCount, checkedOutBooks, overdueBooks, unpaidFineLoans, paidFineLogs] = await Promise.all([
     prisma.book.aggregate({
       _sum: {
         availableCopies: true,
       },
     }),
+    prisma.bookCopy.count(),
     prisma.loan.count({
       where: {
         status: {
@@ -482,7 +511,35 @@ async function getFineDashboard() {
         { returnDate: "desc" },
       ],
     }),
+    prisma.auditLog.findMany({
+      where: {
+        action: "PAY_FINE",
+        entity: "Loan",
+      },
+      include: {
+        user: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
   ]);
+
+  const paidLoanIds = Array.from(new Set(paidFineLogs.map((log) => log.entityId).filter(Boolean)));
+  const paidLoans = paidLoanIds.length
+    ? await prisma.loan.findMany({
+        where: {
+          id: {
+            in: paidLoanIds,
+          },
+        },
+        include: {
+          book: true,
+          user: true,
+        },
+      })
+    : [];
+  const paidLoanMap = new Map(paidLoans.map((loan) => [loan.id, loan]));
 
   const fineItems = unpaidFineLoans.map((loan) => ({
     loanId: loan.id,
@@ -499,13 +556,57 @@ async function getFineDashboard() {
     status: loan.status,
   }));
 
+  const paidFineItems = paidFineLogs.map((log) => {
+    const detail = parseAuditDetail(log.detail);
+    const loan = paidLoanMap.get(log.entityId);
+    const amount = Number(detail.amount ?? loan?.fineAmount ?? 0);
+
+    return {
+      paymentId: log.id,
+      loanId: log.entityId,
+      userId: loan?.userId || detail.borrowerId || "-",
+      userName: loan?.user?.name || "Unknown user",
+      userEmail: loan?.user?.email || "-",
+      studentId: loan?.user?.studentId || "-",
+      bookId: loan?.bookId || "-",
+      bookTitle: loan?.book?.title || "This book is no longer available",
+      isbn: loan?.book?.isbn || "-",
+      paidAmount: amount,
+      paidAt: formatDateTime(log.createdAt),
+      paidAtRaw: log.createdAt,
+      method: detail.method || "SIMULATED",
+      collectorName: log.user?.name || "Self service",
+      collectorEmail: log.user?.email || "-",
+      alipayTradeNo: detail.alipayTradeNo || null,
+      outTradeNo: detail.outTradeNo || null,
+    };
+  });
+
+  const booksInLibrary = bookCopySummary._sum.availableCopies || 0;
+  const totalBooks = Math.max(bookCopyCount, booksInLibrary + checkedOutBooks);
+  const unpaidFineTotal = fineItems.reduce((sum, item) => sum + item.fineAmount, 0);
+  const paidFineTotal = paidFineItems.reduce((sum, item) => sum + item.paidAmount, 0);
+  const paidThisWeek = paidFineItems
+    .filter((item) => item.paidAtRaw >= startOfWeek)
+    .reduce((sum, item) => sum + item.paidAmount, 0);
+  const paidThisYear = paidFineItems
+    .filter((item) => item.paidAtRaw >= startOfYear)
+    .reduce((sum, item) => sum + item.paidAmount, 0);
+
   return {
-    booksInLibrary: bookCopySummary._sum.availableCopies || 0,
+    totalBooks,
+    booksInLibrary,
     checkedOutBooks,
     overdueBooks,
-    fineDueToday: fineItems.reduce((sum, item) => sum + item.fineAmount, 0),
+    unpaidFineTotal,
+    paidFineTotal,
+    paidThisWeek,
+    paidThisYear,
+    fineDueToday: unpaidFineTotal,
     fineItemCount: fineItems.length,
     fineItems,
+    paidFineItemCount: paidFineItems.length,
+    paidFineItems,
     generatedAt: formatDateTime(new Date()),
   };
 }

@@ -3,12 +3,19 @@ import React, { useEffect, useState } from 'react'
 const API_BASE = '/api/librarian'
 const DEFAULT_STATS = { totalBooks: 0, availableBooks: 0, myLoans: 0, pendingHolds: 0 }
 const DEFAULT_FINE_DASHBOARD = {
+  totalBooks: 0,
   booksInLibrary: 0,
   checkedOutBooks: 0,
   overdueBooks: 0,
+  unpaidFineTotal: 0,
+  paidFineTotal: 0,
+  paidThisWeek: 0,
+  paidThisYear: 0,
   fineDueToday: 0,
   fineItemCount: 0,
   fineItems: [],
+  paidFineItemCount: 0,
+  paidFineItems: [],
   generatedAt: ''
 }
 const GENRES = ['Technology', 'Fiction', 'Science', 'History', 'Management']
@@ -43,6 +50,7 @@ const LibrarianDashboard = ({
   const [holdLoading, setHoldLoading] = useState(false)
   const [fineDashboardLoading, setFineDashboardLoading] = useState(false)
   const [fineDashboard, setFineDashboard] = useState(DEFAULT_FINE_DASHBOARD)
+  const [fineDashboardView, setFineDashboardView] = useState('unpaid')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [payingFineId, setPayingFineId] = useState('')
   const [barcodeLookupLoading, setBarcodeLookupLoading] = useState(false)
@@ -215,7 +223,8 @@ const LibrarianDashboard = ({
         setFineDashboard({
           ...DEFAULT_FINE_DASHBOARD,
           ...result.data,
-          fineItems: result.data?.fineItems || []
+          fineItems: result.data?.fineItems || [],
+          paidFineItems: result.data?.paidFineItems || []
         })
         setStats(prev => ({
           ...prev,
@@ -571,7 +580,7 @@ const LibrarianDashboard = ({
     const barcode = checkoutForm.bookIdentifier.trim()
 
     if (!barcode) {
-      setCheckoutErrors(prev => ({ ...prev, bookIdentifier: 'Barcode, ISBN, or book ID is required' }))
+      setCheckoutErrors(prev => ({ ...prev, bookIdentifier: 'Barcode or ISBN is required' }))
       setBarcodeBook(null)
       return
     }
@@ -580,17 +589,18 @@ const LibrarianDashboard = ({
     setCheckoutErrors(prev => ({ ...prev, bookIdentifier: '' }))
     try {
       const token = getToken()
-      const res = await fetch(`${API_BASE}/barcodes/${encodeURIComponent(barcode)}`, {
+      const params = new URLSearchParams({ isbn: barcode })
+      const res = await fetch(`${API_BASE}/books/scan?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       const result = await res.json()
 
       if (result.code === 200) {
         setBarcodeBook(result.data)
-        notify('success', `Barcode matched: ${result.data.title}`)
+        notify('success', `Scan matched: ${result.data.title}`)
       } else {
         setBarcodeBook(null)
-        notify('error', result.message || 'No book matched this barcode')
+        notify('error', result.message || 'No book matched this barcode or ISBN')
       }
     } catch (err) {
       setBarcodeBook(null)
@@ -892,12 +902,28 @@ const LibrarianDashboard = ({
     </>
   )
 
+  const getVisiblePaidFineItems = () => fineDashboard.paidFineItems.filter((item) => {
+    if (fineDashboardView === 'week') {
+      const paidAt = new Date(item.paidAt)
+      const today = new Date()
+      const start = new Date(today)
+      start.setHours(0, 0, 0, 0)
+      const day = start.getDay()
+      start.setDate(start.getDate() + (day === 0 ? -6 : 1 - day))
+      return paidAt >= start
+    }
+    if (fineDashboardView === 'year') {
+      return new Date(item.paidAt).getFullYear() === new Date().getFullYear()
+    }
+    return true
+  })
+
   const renderFineDashboardPanel = () => (
     <div className="fine-dashboard-panel">
       <div className="fine-dashboard-header">
         <div>
-          <h3>Today&apos;s Fine Collection</h3>
-          <p>Unpaid fines that need attention from the circulation desk.</p>
+          <h3>Fine Dashboard</h3>
+          <p>Track unpaid fines, paid collections, and the borrowers behind each payment.</p>
         </div>
         <button
           type="button"
@@ -909,15 +935,58 @@ const LibrarianDashboard = ({
         </button>
       </div>
 
+      <div className="fine-summary-grid">
+        <button
+          type="button"
+          className={`fine-summary-tile ${fineDashboardView === 'unpaid' ? 'active' : ''}`}
+          onClick={() => setFineDashboardView('unpaid')}
+        >
+          <span>Unpaid Fines</span>
+          <strong>{formatMoney(fineDashboard.unpaidFineTotal ?? fineDashboard.fineDueToday)}</strong>
+          <small>{fineDashboard.fineItemCount} borrowers need follow-up</small>
+        </button>
+        <button
+          type="button"
+          className={`fine-summary-tile ${fineDashboardView === 'paid' ? 'active' : ''}`}
+          onClick={() => setFineDashboardView('paid')}
+        >
+          <span>Paid Fines</span>
+          <strong>{formatMoney(fineDashboard.paidFineTotal)}</strong>
+          <small>{fineDashboard.paidFineItemCount} collected payments</small>
+        </button>
+        <button
+          type="button"
+          className={`fine-summary-tile ${fineDashboardView === 'week' ? 'active' : ''}`}
+          onClick={() => setFineDashboardView('week')}
+        >
+          <span>This Week</span>
+          <strong>{formatMoney(fineDashboard.paidThisWeek)}</strong>
+          <small>Fine income collected this week</small>
+        </button>
+        <button
+          type="button"
+          className={`fine-summary-tile ${fineDashboardView === 'year' ? 'active' : ''}`}
+          onClick={() => setFineDashboardView('year')}
+        >
+          <span>This Year</span>
+          <strong>{formatMoney(fineDashboard.paidThisYear)}</strong>
+          <small>Fine income collected this year</small>
+        </button>
+      </div>
+
       <div className="fine-collection-table">
         <div className="fine-table-title">
-          <h4>Collection List</h4>
-          <span>{fineDashboard.fineItemCount} unpaid</span>
+          <h4>{fineDashboardView === 'unpaid' ? 'Who Has Not Paid' : 'Who Paid Fines'}</h4>
+          <span>
+            {fineDashboardView === 'unpaid'
+              ? `${fineDashboard.fineItemCount} unpaid`
+              : `${fineDashboard.paidFineItemCount} paid`}
+          </span>
         </div>
 
         {fineDashboardLoading ? (
           <div className="fine-empty-state">Loading fine dashboard...</div>
-        ) : fineDashboard.fineItems.length > 0 ? (
+        ) : fineDashboardView === 'unpaid' && fineDashboard.fineItems.length > 0 ? (
           <div className="loan-table-wrapper">
             <table className="data-table">
               <thead>
@@ -958,8 +1027,48 @@ const LibrarianDashboard = ({
               </tbody>
             </table>
           </div>
+        ) : fineDashboardView !== 'unpaid' && getVisiblePaidFineItems().length > 0 ? (
+          <div className="loan-table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Borrower</th>
+                  <th>Book</th>
+                  <th>Paid Amount</th>
+                  <th>Paid At</th>
+                  <th>Method</th>
+                  <th>Collector</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getVisiblePaidFineItems().map((item) => (
+                    <tr key={item.paymentId}>
+                      <td>
+                        <div className="loan-record-title">{item.userName}</div>
+                        <div className="loan-record-meta">{item.userEmail}</div>
+                      </td>
+                      <td>
+                        <div className="loan-record-title">{item.bookTitle}</div>
+                        <div className="loan-record-meta">ISBN: {item.isbn}</div>
+                      </td>
+                      <td className="fine-paid-cell">{formatMoney(item.paidAmount)}</td>
+                      <td>{formatDateLabel(item.paidAt)}</td>
+                      <td>{item.method}</td>
+                      <td>
+                        <div className="loan-record-title">{item.collectorName}</div>
+                        <div className="loan-record-meta">{item.collectorEmail}</div>
+                      </td>
+                    </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <div className="fine-empty-state">No unpaid fines to collect today.</div>
+          <div className="fine-empty-state">
+            {fineDashboardView === 'unpaid'
+              ? 'No unpaid fines to collect today.'
+              : 'No paid fine records for this view.'}
+          </div>
         )}
       </div>
     </div>
@@ -1037,24 +1146,38 @@ const LibrarianDashboard = ({
         <div className="stat-card">
           <div className="stat-icon blue">📖</div>
           <div className="stat-content">
-            <h3>{fineDashboard.booksInLibrary}</h3>
-            <p>Books in Library</p>
+            <h3>{fineDashboard.totalBooks}</h3>
+            <p>Total Books</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green">✅</div>
           <div className="stat-content">
-            <h3>{fineDashboard.checkedOutBooks}</h3>
-            <p>Checked Out</p>
+            <h3>{fineDashboard.booksInLibrary}</h3>
+            <p>Books in Library</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon orange">📋</div>
           <div className="stat-content">
-            <h3>{formatMoney(fineDashboard.fineDueToday)}</h3>
-            <p>Fine Due Today</p>
+            <h3>{fineDashboard.checkedOutBooks}</h3>
+            <p>Checked Out</p>
           </div>
         </div>
+        <button type="button" className="stat-card stat-card-button" onClick={() => setFineDashboardView('unpaid')}>
+          <div className="stat-icon red">🕒</div>
+          <div className="stat-content">
+            <h3>{formatMoney(fineDashboard.unpaidFineTotal ?? fineDashboard.fineDueToday)}</h3>
+            <p>Unpaid Fines</p>
+          </div>
+        </button>
+        <button type="button" className="stat-card stat-card-button" onClick={() => setFineDashboardView('paid')}>
+          <div className="stat-icon blue">💳</div>
+          <div className="stat-content">
+            <h3>{formatMoney(fineDashboard.paidFineTotal)}</h3>
+            <p>Paid Fines</p>
+          </div>
+        </button>
         <div className="stat-card">
           <div className="stat-icon red">🕒</div>
           <div className="stat-content">
@@ -1318,7 +1441,7 @@ const LibrarianDashboard = ({
             </div>
 
             <div className="form-group">
-              <label>Barcode / ISBN / Book ID *</label>
+              <label>Barcode / ISBN *</label>
               <div className="barcode-input-row">
                 <input
                   type="text"
@@ -1328,7 +1451,7 @@ const LibrarianDashboard = ({
                     setCheckoutErrors(prev => ({ ...prev, bookIdentifier: '' }))
                     setBarcodeBook(null)
                   }}
-                  placeholder="Scan barcode, ISBN, or book ID"
+                  placeholder="Scan barcode or enter ISBN"
                 />
                 <button
                   type="button"
@@ -1359,7 +1482,7 @@ const LibrarianDashboard = ({
             )}
 
             <p className="loan-form-hint">
-              Scan with a hardware barcode scanner or type the ISBN/book ID, then look it up before checkout.
+              Scan with a hardware barcode scanner or type the ISBN, then look it up before checkout.
             </p>
 
             <div className="loan-actions-row">

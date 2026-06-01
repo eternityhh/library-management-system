@@ -79,7 +79,7 @@ async function main() {
     data: {
       title: `Librarian Release2 Checkout ${uniqueSuffix}`,
       author: "Codex Librarian",
-      isbn: `librarian-r2-checkout-${uniqueSuffix}`,
+      isbn: `978${String(uniqueSuffix).slice(-10)}`,
       genre: "Technology",
       language: "English",
       shelfLocation: "LIB-R2-001",
@@ -88,6 +88,14 @@ async function main() {
     },
   });
   createdBookIds.push(checkoutBook.id);
+  const checkoutBookCopy = await prisma.bookCopy.create({
+    data: {
+      bookId: checkoutBook.id,
+      barcode: `BC${String(uniqueSuffix).slice(-9)}`,
+      shelfLocation: "LIB-R2-001",
+      available: true,
+    },
+  });
 
   const unavailableBook = await prisma.book.create({
     data: {
@@ -160,39 +168,37 @@ async function main() {
   assert.equal(isbnSearchMiss.body.data.total, 0);
   assert.deepEqual(isbnSearchMiss.body.data.list, []);
 
-  const barcodeLookupByIsbn = await request(
-    `/api/librarian/barcodes/${encodeURIComponent(checkoutBook.isbn)}`,
+  const scanByIsbn = await request(
+    `/api/librarian/books/scan?isbn=${encodeURIComponent(checkoutBook.isbn)}`,
     {
       headers: {
         Authorization: `Bearer ${librarianToken}`,
       },
     },
   );
-  assert.equal(barcodeLookupByIsbn.response.status, 200);
-  assert.equal(barcodeLookupByIsbn.body.data.id, checkoutBook.id);
-  assert.equal(barcodeLookupByIsbn.body.data.barcodeType, "ISBN");
+  assert.equal(scanByIsbn.response.status, 200);
+  assert.equal(scanByIsbn.body.data.id, checkoutBook.id);
 
-  const barcodeLookupByBookId = await request(
-    `/api/librarian/barcodes/${encodeURIComponent(`book:${checkoutBook.id}`)}`,
+  const scanByBarcode = await request(
+    `/api/librarian/books/scan?isbn=${encodeURIComponent(checkoutBookCopy.barcode)}`,
     {
       headers: {
         Authorization: `Bearer ${librarianToken}`,
       },
     },
   );
-  assert.equal(barcodeLookupByBookId.response.status, 200);
-  assert.equal(barcodeLookupByBookId.body.data.id, checkoutBook.id);
-  assert.equal(barcodeLookupByBookId.body.data.barcodeType, "BOOK_ID");
+  assert.equal(scanByBarcode.response.status, 200);
+  assert.equal(scanByBarcode.body.data.id, checkoutBook.id);
 
-  const barcodeLookupMiss = await request(
-    `/api/librarian/barcodes/${encodeURIComponent(`missing-barcode-${uniqueSuffix}`)}`,
+  const scanMiss = await request(
+    `/api/librarian/books/scan?isbn=${encodeURIComponent(`MISS${String(uniqueSuffix).slice(-8)}`)}`,
     {
       headers: {
         Authorization: `Bearer ${librarianToken}`,
       },
     },
   );
-  assert.equal(barcodeLookupMiss.response.status, 404);
+  assert.equal(scanMiss.response.status, 404);
 
   const invalidUserCheckout = await request("/api/librarian/loans/checkout", {
     method: "POST",
@@ -346,7 +352,10 @@ async function main() {
     },
   });
   assert.equal(fineDashboard.response.status, 200);
+  assert.ok(fineDashboard.body.data.totalBooks >= fineDashboard.body.data.booksInLibrary);
   assert.ok(fineDashboard.body.data.booksInLibrary >= 2);
+  assert.equal(typeof fineDashboard.body.data.checkedOutBooks, "number");
+  assert.ok(fineDashboard.body.data.unpaidFineTotal >= 5);
   assert.ok(fineDashboard.body.data.fineDueToday >= 5);
   assert.ok(
     fineDashboard.body.data.fineItems.some(
@@ -415,6 +424,17 @@ async function main() {
     },
   });
   assert.equal(fineDashboardAfterAlipay.response.status, 200);
+  assert.ok(fineDashboardAfterAlipay.body.data.paidFineTotal >= 5);
+  assert.ok(fineDashboardAfterAlipay.body.data.paidThisWeek >= 5);
+  assert.ok(fineDashboardAfterAlipay.body.data.paidThisYear >= 5);
+  assert.ok(
+    fineDashboardAfterAlipay.body.data.paidFineItems.some(
+      (item) =>
+        item.loanId === fineLoanId &&
+        item.userId === borrowerId &&
+        item.paidAmount === 5,
+    ),
+  );
   assert.ok(
     !fineDashboardAfterAlipay.body.data.fineItems.some((item) => item.loanId === fineLoanId),
   );
