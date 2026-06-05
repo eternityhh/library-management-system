@@ -29,6 +29,27 @@ const formatDateLabel = (value) => {
 
 const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`
 
+const getBookDisplayStatus = (book) => {
+  if (book?.displayStatus) return book.displayStatus
+  if (book?.available && Number(book?.availableCopies || 0) > 0) return 'AVAILABLE'
+  if (Number(book?.borrowedCopies || 0) > 0) return 'BORROWED'
+  return 'UNAVAILABLE'
+}
+
+const getBookStatusLabel = (book) => {
+  const status = getBookDisplayStatus(book)
+  if (status === 'BORROWED') return 'Borrowed'
+  if (status === 'AVAILABLE') return 'Available'
+  return 'Unavailable'
+}
+
+const getBookStatusBadgeClass = (book) => {
+  const status = getBookDisplayStatus(book)
+  if (status === 'BORROWED') return 'warning'
+  if (status === 'AVAILABLE') return 'success'
+  return 'danger'
+}
+
 const LibrarianDashboard = ({
   user,
   stats: initialStats = DEFAULT_STATS,
@@ -130,7 +151,7 @@ const LibrarianDashboard = ({
     setStats(prev => ({
       ...prev,
       totalBooks: total ?? list.length,
-      availableBooks: list.filter(book => book.available).length
+      availableBooks: list.filter(book => getBookDisplayStatus(book) === 'AVAILABLE').length
     }))
   }
 
@@ -823,8 +844,7 @@ const LibrarianDashboard = ({
       processed = processed.filter(book => book.genre === filterGenre)
     }
     if (filterStatus) {
-      const isAvailable = filterStatus === 'available'
-      processed = processed.filter(book => book.available === isAvailable)
+      processed = processed.filter(book => getBookDisplayStatus(book).toLowerCase() === filterStatus)
     }
 
     // Apply sorting
@@ -1220,8 +1240,8 @@ const LibrarianDashboard = ({
                 <td>{book.isbn}</td>
                 <td>{book.genre}</td>
                 <td>
-                  <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
-                    {book.available ? 'Available' : 'Borrowed'}
+                  <span className={`status-badge ${getBookStatusBadgeClass(book)}`}>
+                    {getBookStatusLabel(book)}
                   </span>
                 </td>
               </tr>
@@ -1299,8 +1319,8 @@ const LibrarianDashboard = ({
                 <p className="book-detail">Location: {book.shelfLocation || 'N/A'}</p>
                 <p className="book-detail">Copies: {book.availableCopies}</p>
                 <div className="book-status">
-                  <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
-                    {book.available ? 'Available' : 'Borrowed'}
+                  <span className={`status-badge ${getBookStatusBadgeClass(book)}`}>
+                    {getBookStatusLabel(book)}
                   </span>
                 </div>
               </div>
@@ -1348,6 +1368,7 @@ const LibrarianDashboard = ({
                 <option value="">All Status</option>
                 <option value="available">Available</option>
                 <option value="borrowed">Borrowed</option>
+                <option value="unavailable">Unavailable</option>
               </select>
             </div>
           </div>
@@ -1368,8 +1389,8 @@ const LibrarianDashboard = ({
                   <th onClick={() => handleSort('genre')} style={{ cursor: 'pointer' }}>
                     Genre{getSortIcon('genre')}
                   </th>
-                  <th onClick={() => handleSort('available')} style={{ cursor: 'pointer' }}>
-                    Available{getSortIcon('available')}
+                  <th onClick={() => handleSort('displayStatus')} style={{ cursor: 'pointer' }}>
+                    Status{getSortIcon('displayStatus')}
                   </th>
                   <th onClick={() => handleSort('availableCopies')} style={{ cursor: 'pointer' }}>
                     Copies{getSortIcon('availableCopies')}
@@ -1385,8 +1406,8 @@ const LibrarianDashboard = ({
                     <td>{book.isbn}</td>
                     <td>{book.genre}</td>
                     <td>
-                      <span className={`status-badge ${book.available ? 'success' : 'danger'}`}>
-                        {book.available ? 'Yes' : 'No'}
+                      <span className={`status-badge ${getBookStatusBadgeClass(book)}`}>
+                        {getBookStatusLabel(book)}
                       </span>
                     </td>
                     <td>{book.availableCopies}</td>
@@ -1468,15 +1489,15 @@ const LibrarianDashboard = ({
             </div>
 
             {barcodeBook && (
-              <div className={`barcode-result ${barcodeBook.available ? 'available' : 'unavailable'}`}>
+              <div className={`barcode-result ${getBookDisplayStatus(barcodeBook) === 'AVAILABLE' ? 'available' : 'unavailable'}`}>
                 <div>
                   <span className="barcode-result-label">Matched Book</span>
                   <strong>{barcodeBook.title}</strong>
                   <p>{barcodeBook.author} · ISBN: {barcodeBook.isbn}</p>
                   <p>Location: {barcodeBook.shelfLocation || 'N/A'} · Copies: {barcodeBook.availableCopies}</p>
                 </div>
-                <span className={`status-badge ${barcodeBook.available ? 'success' : 'danger'}`}>
-                  {barcodeBook.available ? 'Available' : 'Unavailable'}
+                <span className={`status-badge ${getBookStatusBadgeClass(barcodeBook)}`}>
+                  {getBookStatusLabel(barcodeBook)}
                 </span>
               </div>
             )}

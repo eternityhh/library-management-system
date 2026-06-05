@@ -155,6 +155,21 @@ async function main() {
   assert.equal(isbnSearch.response.status, 200);
   assert.equal(isbnSearch.body.data.total, 1);
   assert.equal(isbnSearch.body.data.list[0].id, checkoutBook.id);
+  assert.equal(isbnSearch.body.data.list[0].displayStatus, "AVAILABLE");
+  assert.equal(isbnSearch.body.data.list[0].borrowedCopies, 0);
+
+  const unavailableBookStatus = await request(
+    `/api/librarian/books?keyword=${encodeURIComponent(unavailableBook.isbn)}&type=isbn`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(unavailableBookStatus.response.status, 200);
+  assert.equal(unavailableBookStatus.body.data.list[0].id, unavailableBook.id);
+  assert.equal(unavailableBookStatus.body.data.list[0].displayStatus, "UNAVAILABLE");
+  assert.equal(unavailableBookStatus.body.data.list[0].borrowedCopies, 0);
 
   const isbnSearchMiss = await request(
     `/api/librarian/books?keyword=${encodeURIComponent(`missing-isbn-${uniqueSuffix}`)}&type=isbn`,
@@ -266,6 +281,18 @@ async function main() {
   assert.equal(borrowedCheckoutBook.availableCopies, 0);
   assert.equal(borrowedCheckoutBook.available, false);
 
+  const borrowedBookStatus = await request(
+    `/api/librarian/books?keyword=${encodeURIComponent(checkoutBook.isbn)}&type=isbn`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(borrowedBookStatus.response.status, 200);
+  assert.equal(borrowedBookStatus.body.data.list[0].displayStatus, "BORROWED");
+  assert.equal(borrowedBookStatus.body.data.list[0].borrowedCopies, 1);
+
   const loanList = await request("/api/librarian/loans", {
     headers: {
       Authorization: `Bearer ${librarianToken}`,
@@ -297,6 +324,18 @@ async function main() {
   });
   assert.equal(returnedCheckoutBook.availableCopies, 1);
   assert.equal(returnedCheckoutBook.available, true);
+
+  const returnedBookStatus = await request(
+    `/api/librarian/books?keyword=${encodeURIComponent(checkoutBook.isbn)}&type=isbn`,
+    {
+      headers: {
+        Authorization: `Bearer ${librarianToken}`,
+      },
+    },
+  );
+  assert.equal(returnedBookStatus.response.status, 200);
+  assert.equal(returnedBookStatus.body.data.list[0].displayStatus, "AVAILABLE");
+  assert.equal(returnedBookStatus.body.data.list[0].borrowedCopies, 0);
 
   const duplicateReturn = await request("/api/librarian/loans/return", {
     method: "POST",
