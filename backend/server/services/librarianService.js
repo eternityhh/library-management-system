@@ -170,6 +170,46 @@ function normalizeBarcodeValue(value) {
   };
 }
 
+function buildBookStatus(book, borrowedCopies = 0) {
+  if (book.available && book.availableCopies > 0) {
+    return "AVAILABLE";
+  }
+
+  if (borrowedCopies > 0) {
+    return "BORROWED";
+  }
+
+  return "UNAVAILABLE";
+}
+
+async function getBorrowedCopyMap(bookIds) {
+  if (!bookIds.length) {
+    return new Map();
+  }
+
+  const grouped = await prisma.loan.groupBy({
+    by: ["bookId"],
+    where: {
+      bookId: {
+        in: bookIds,
+      },
+      status: {
+        in: ACTIVE_LOAN_STATUSES,
+      },
+    },
+    _count: {
+      id: true,
+    },
+  });
+
+  return new Map(grouped.map((item) => [item.bookId, item._count.id]));
+}
+
+async function getBorrowedCopies(bookId) {
+  const borrowedMap = await getBorrowedCopyMap([bookId]);
+  return borrowedMap.get(bookId) || 0;
+}
+
 function getStartOfWeek(date) {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);
@@ -423,12 +463,13 @@ async function viewBooks(query) {
       orderBy: { createdAt: "desc" },
     }),
   ]);
+  const borrowedMap = await getBorrowedCopyMap(books.map((book) => book.id));
 
   return {
     total,
     page,
     size,
-    list: books.map(toBookSummary),
+    list: books.map((book) => toBookSummary(book, borrowedMap.get(book.id) || 0)),
   };
 }
 
@@ -459,8 +500,10 @@ async function lookupBarcode(code) {
     throw new AppError(404, "Book not found for this barcode");
   }
 
+  const borrowedCopies = await getBorrowedCopies(book.id);
+
   return {
-    ...toBookDetail(book),
+    ...toBookDetail(book, borrowedCopies),
     barcode: raw,
     barcodeType: book.id === normalized ? "BOOK_ID" : "ISBN",
   };
@@ -633,7 +676,8 @@ async function scanBook(isbn) {
   });
 
   if (bookCopy) {
-    return toBookDetail(bookCopy.book);
+    const borrowedCopies = await getBorrowedCopies(bookCopy.book.id);
+    return toBookDetail(bookCopy.book, borrowedCopies);
   }
 
   // If not found by barcode, try to find by ISBN in Book table
@@ -645,7 +689,8 @@ async function scanBook(isbn) {
     throw new AppError(404, "Book not found with this ISBN");
   }
 
-  return toBookDetail(book);
+  const borrowedCopies = await getBorrowedCopies(book.id);
+  return toBookDetail(book, borrowedCopies);
 }
 
 function isValidIsbn(code) {
@@ -703,7 +748,7 @@ async function deleteBook(bookId, userId) {
 /**
  * Helper: Convert book to summary format
  */
-function toBookSummary(book) {
+function toBookSummary(book, borrowedCopies = 0) {
   return {
     id: book.id,
     title: book.title,
@@ -715,6 +760,8 @@ function toBookSummary(book) {
     shelfLocation: book.shelfLocation,
     available: book.available,
     availableCopies: book.availableCopies,
+    borrowedCopies,
+    displayStatus: buildBookStatus(book, borrowedCopies),
     createdAt: formatDateTime(book.createdAt),
   };
 }
@@ -722,7 +769,7 @@ function toBookSummary(book) {
 /**
  * Helper: Convert book to detail format
  */
-function toBookDetail(book) {
+function toBookDetail(book, borrowedCopies = 0) {
   return {
     id: book.id,
     title: book.title,
@@ -735,6 +782,8 @@ function toBookDetail(book) {
     shelfLocation: book.shelfLocation,
     available: book.available,
     availableCopies: book.availableCopies,
+    borrowedCopies,
+    displayStatus: buildBookStatus(book, borrowedCopies),
     createdAt: formatDateTime(book.createdAt),
   };
 }
