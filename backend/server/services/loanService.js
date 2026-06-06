@@ -819,7 +819,7 @@ async function payFine(userId, loanId, payload) {
 async function librarianPayFine(loanId, payload, actorUserId) {
   const amountInput = payload?.amount;
   const authCode = typeof payload?.authCode === "string" ? payload.authCode.trim() : "";
-  const isSandboxAuthCode = /^28\d{14,22}$/.test(authCode);
+  const isSandboxAuthCode = !authCode || /^28\d{14,22}$/.test(authCode);
 
   if (!isSandboxAuthCode) {
     throw new AppError(400, "Invalid Alipay payment code");
@@ -874,7 +874,8 @@ async function librarianPayFine(loanId, payload, actorUserId) {
           amount: fineAmount,
           method: "ALIPAY",
           borrowerId: loan.userId,
-          authCodeTail: authCode.slice(-4),
+          confirmationMode: authCode ? "AUTH_CODE" : "QR_CONFIRMATION",
+          ...(authCode ? { authCodeTail: authCode.slice(-4) } : {}),
           outTradeNo,
           alipayTradeNo,
         }),

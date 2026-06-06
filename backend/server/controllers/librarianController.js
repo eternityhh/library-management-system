@@ -115,6 +115,19 @@ async function viewBooks(req, res, next) {
 }
 
 /**
+ * L1.3 - View one book with copy barcodes
+ * GET /api/librarian/books/:id
+ */
+async function getBookDetail(req, res, next) {
+  try {
+    const data = await librarianService.getBookDetail(req.params.id);
+    sendSuccess(res, data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Barcode lookup for librarian checkout
  * GET /api/librarian/barcodes/:code
  */
@@ -159,6 +172,7 @@ module.exports = {
   addBook,
   editBook,
   viewBooks,
+  getBookDetail,
   lookupBarcode,
   getFineDashboard,
   deleteBook,

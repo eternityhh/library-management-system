@@ -29,6 +29,108 @@ const formatDateLabel = (value) => {
 
 const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`
 
+const CODE39_PATTERNS = {
+  '0': 'nnnwwnwnn',
+  '1': 'wnnwnnnnw',
+  '2': 'nnwwnnnnw',
+  '3': 'wnwwnnnnn',
+  '4': 'nnnwwnnnw',
+  '5': 'wnnwwnnnn',
+  '6': 'nnwwwnnnn',
+  '7': 'nnnwnnwnw',
+  '8': 'wnnwnnwnn',
+  '9': 'nnwwnnwnn',
+  A: 'wnnnnwnnw',
+  B: 'nnwnnwnnw',
+  C: 'wnwnnwnnn',
+  D: 'nnnnwwnnw',
+  E: 'wnnnwwnnn',
+  F: 'nnwnwwnnn',
+  G: 'nnnnnwwnw',
+  H: 'wnnnnwwnn',
+  I: 'nnwnnwwnn',
+  J: 'nnnnwwwnn',
+  K: 'wnnnnnnww',
+  L: 'nnwnnnnww',
+  M: 'wnwnnnnwn',
+  N: 'nnnnwnnww',
+  O: 'wnnnwnnwn',
+  P: 'nnwnwnnwn',
+  Q: 'nnnnnnwww',
+  R: 'wnnnnnwwn',
+  S: 'nnwnnnwwn',
+  T: 'nnnnwnwwn',
+  U: 'wwnnnnnnw',
+  V: 'nwwnnnnnw',
+  W: 'wwwnnnnnn',
+  X: 'nwnnwnnnw',
+  Y: 'wwnnwnnnn',
+  Z: 'nwwnwnnnn',
+  '-': 'nwnnnnwnw',
+  '.': 'wwnnnnwnn',
+  ' ': 'nwwnnnwnn',
+  '$': 'nwnwnwnnn',
+  '/': 'nwnwnnnwn',
+  '+': 'nwnnnwnwn',
+  '%': 'nnnwnwnwn',
+  '*': 'nwnnwnwnn'
+}
+
+const normalizeCode39Value = (value) =>
+  String(value || '')
+    .toUpperCase()
+    .split('')
+    .filter((char) => CODE39_PATTERNS[char])
+    .join('')
+
+const buildCode39Bars = (value) => {
+  const narrow = 2
+  const wide = 5
+  const gap = narrow
+  const quietZone = 10
+  const encoded = `*${normalizeCode39Value(value)}*`
+  const bars = []
+  let x = quietZone
+
+  encoded.split('').forEach((char) => {
+    const pattern = CODE39_PATTERNS[char]
+    if (!pattern) return
+
+    pattern.split('').forEach((widthCode, index) => {
+      const width = widthCode === 'w' ? wide : narrow
+      if (index % 2 === 0) {
+        bars.push({ x, width })
+      }
+      x += width
+    })
+    x += gap
+  })
+
+  return { bars, width: x + quietZone }
+}
+
+const CopyBarcode = ({ value }) => {
+  const { bars, width } = buildCode39Bars(value)
+
+  return (
+    <svg
+      className="copy-barcode-svg"
+      viewBox={`0 0 ${width} 92`}
+      role="img"
+      aria-label={`Barcode ${value}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <rect width={width} height="92" fill="#ffffff" />
+      {bars.map((bar, index) => (
+        <rect key={`${bar.x}-${index}`} x={bar.x} y="8" width={bar.width} height="58" fill="#111827" />
+      ))}
+      <text x={width / 2} y="82" textAnchor="middle">
+        {value}
+      </text>
+    </svg>
+  )
+}
+
 const getBookDisplayStatus = (book) => {
   if (book?.displayStatus) return book.displayStatus
   if (book?.available && Number(book?.availableCopies || 0) > 0) return 'AVAILABLE'
@@ -98,11 +200,12 @@ const LibrarianDashboard = ({
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [alipayTarget, setAlipayTarget] = useState(null)
-  const [alipayForm, setAlipayForm] = useState({ authCode: '' })
   const [alipayResult, setAlipayResult] = useState(null)
   const [returnTarget, setReturnTarget] = useState(null)
   const [readyTarget, setReadyTarget] = useState(null)
   const [cancelHoldTarget, setCancelHoldTarget] = useState(null)
+  const [copyBarcodeTarget, setCopyBarcodeTarget] = useState(null)
+  const [copyBarcodeLoadingId, setCopyBarcodeLoadingId] = useState('')
   const [expandedHoldId, setExpandedHoldId] = useState('')
   const [selectedBook, setSelectedBook] = useState(null)
   const [addForm, setAddForm] = useState({
@@ -526,6 +629,27 @@ const LibrarianDashboard = ({
     }
   }
 
+  const openCopyBarcodeModal = async (book) => {
+    setCopyBarcodeLoadingId(book.id)
+    try {
+      const token = getToken()
+      const res = await fetch(`${API_BASE}/books/${book.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await res.json()
+
+      if (result.code === 200) {
+        setCopyBarcodeTarget(result.data)
+      } else {
+        notify('error', result.message || 'Failed to load book copies')
+      }
+    } catch (err) {
+      notify('error', 'Network error: ' + err.message)
+    } finally {
+      setCopyBarcodeLoadingId('')
+    }
+  }
+
   const resetAddForm = () => {
     setAddForm({
       title: '',
@@ -633,7 +757,6 @@ const LibrarianDashboard = ({
 
   const openAlipayModal = (item) => {
     setAlipayTarget(item)
-    setAlipayForm({ authCode: '' })
     setAlipayResult(null)
   }
 
@@ -643,7 +766,6 @@ const LibrarianDashboard = ({
     }
 
     setAlipayTarget(null)
-    setAlipayForm({ authCode: '' })
     setAlipayResult(null)
   }
 
@@ -651,12 +773,6 @@ const LibrarianDashboard = ({
     e.preventDefault()
 
     if (!alipayTarget) {
-      return
-    }
-
-    const authCode = alipayForm.authCode.trim()
-    if (!/^28\d{14,22}$/.test(authCode)) {
-      notify('error', 'Enter a valid simulated Alipay payment code starting with 28.')
       return
     }
 
@@ -671,8 +787,7 @@ const LibrarianDashboard = ({
         },
         body: JSON.stringify({
           amount: alipayTarget.fineAmount,
-          method: 'ALIPAY',
-          authCode
+          method: 'ALIPAY'
         })
       })
       const result = await res.json()
@@ -1115,17 +1230,9 @@ const LibrarianDashboard = ({
             <div className="return-confirm-detail">Due Date: {formatDateLabel(alipayTarget?.dueDate)}</div>
 
             {!alipayResult ? (
-              <div className="form-group alipay-code-field">
-                <label>Alipay Payment Code *</label>
-                <input
-                  type="text"
-                  value={alipayForm.authCode}
-                  onChange={(e) => setAlipayForm({ authCode: e.target.value })}
-                  placeholder="Scan or enter a code starting with 28"
-                />
-                <div className="loan-form-hint">
-                  Sandbox example: 281234567890123456
-                </div>
+              <div className="alipay-qr-payment">
+                <p>Scan the QR code with Alipay, complete the payment, then click I Have Paid.</p>
+                <img src="/alipay-qr.png" alt="Alipay QR Code" />
               </div>
             ) : (
               <div className="alipay-success-box">
@@ -1141,7 +1248,7 @@ const LibrarianDashboard = ({
             </button>
             {!alipayResult && (
               <button className="btn-alipay btn-sm" type="submit" disabled={payingFineId === alipayTarget?.loanId}>
-                {payingFineId === alipayTarget?.loanId ? 'Processing...' : 'Confirm Alipay'}
+                {payingFineId === alipayTarget?.loanId ? 'Confirming...' : 'I Have Paid'}
               </button>
             )}
           </div>
@@ -1323,6 +1430,14 @@ const LibrarianDashboard = ({
                     {getBookStatusLabel(book)}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  className="btn-sm btn-secondary book-copy-barcode-btn"
+                  onClick={() => openCopyBarcodeModal(book)}
+                  disabled={copyBarcodeLoadingId === book.id}
+                >
+                  {copyBarcodeLoadingId === book.id ? 'Loading...' : 'Copies / Barcode'}
+                </button>
               </div>
             </div>
           ))}
@@ -1332,6 +1447,7 @@ const LibrarianDashboard = ({
             {isSearchMode ? `No books found for "${activeSearchTerm}"` : 'No books found'}
           </div>
         )}
+        {copyBarcodeTarget && renderCopyBarcodeModal()}
       </div>
     )
   }
@@ -1412,6 +1528,13 @@ const LibrarianDashboard = ({
                     </td>
                     <td>{book.availableCopies}</td>
                     <td className="action-buttons-cell">
+                      <button
+                        className="btn-sm btn-secondary"
+                        onClick={() => openCopyBarcodeModal(book)}
+                        disabled={copyBarcodeLoadingId === book.id}
+                      >
+                        {copyBarcodeLoadingId === book.id ? 'Loading...' : 'Copies / Barcode'}
+                      </button>
                       <button className="btn-sm btn-edit" onClick={() => openEditModal(book)}>Edit</button>
                       <button className="btn-sm btn-delete" onClick={() => openDeleteConfirm(book)}>Delete</button>
                     </td>
@@ -1427,6 +1550,7 @@ const LibrarianDashboard = ({
         {showAddModal && renderAddModal()}
         {showEditModal && renderEditModal()}
         {showDeleteConfirm && renderDeleteConfirm()}
+        {copyBarcodeTarget && renderCopyBarcodeModal()}
       </div>
     )
   }
@@ -2116,6 +2240,44 @@ const LibrarianDashboard = ({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+
+  const renderCopyBarcodeModal = () => (
+    <div className="modal-overlay" onClick={() => setCopyBarcodeTarget(null)}>
+      <div className="modal-content copy-barcode-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Copy Barcodes</h3>
+          <button className="modal-close" onClick={() => setCopyBarcodeTarget(null)}>×</button>
+        </div>
+        <div className="modal-body">
+          <p className="book-title-highlight">{copyBarcodeTarget?.title}</p>
+          <div className="return-confirm-detail">ISBN: {copyBarcodeTarget?.isbn}</div>
+          <div className="return-confirm-detail">Shelf: {copyBarcodeTarget?.shelfLocation || 'N/A'}</div>
+
+          {copyBarcodeTarget?.copies?.length > 0 ? (
+            <div className="copy-barcode-grid">
+              {copyBarcodeTarget.copies.map((copy, index) => (
+                <div className="copy-barcode-card" key={copy.id}>
+                  <CopyBarcode value={copy.barcode} />
+                  <div className="copy-barcode-meta">
+                    <strong>Copy {index + 1}</strong>
+                    <span>{copy.barcode}</span>
+                    <em className={copy.available ? 'copy-available' : 'copy-borrowed'}>
+                      {copy.available ? 'Available' : 'Borrowed'}
+                    </em>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="fine-empty-state">No physical copies found for this book.</div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={() => setCopyBarcodeTarget(null)}>Close</button>
+        </div>
       </div>
     </div>
   )
