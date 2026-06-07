@@ -35,6 +35,9 @@ router.get("/books/scan", librarianController.scanBook);
 // L2.5 - Lookup book info from external API
 router.get("/books/lookup", librarianController.lookupBook);
 
+// L1.3 - View one book with copy barcodes
+router.get("/books/:id", librarianController.getBookDetail);
+
 // L2.1/L2.2 - Loan management
 router.get("/loans", loanController.getLibrarianLoans);
 router.post("/loans/checkout", loanController.librarianCheckoutLoan);

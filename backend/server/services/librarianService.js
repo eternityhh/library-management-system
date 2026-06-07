@@ -248,13 +248,50 @@ async function syncOverdueLoans() {
   });
 }
 
-function buildBookCopyCreateManyData(book, copyCount) {
+function buildBookCopyCreateManyData(book, copyCount, startIndex = 0) {
   return Array.from({ length: copyCount }, (_, index) => ({
     bookId: book.id,
-    barcode: `${book.isbn}-${String(index + 1).padStart(3, "0")}`,
+    barcode: `${book.isbn}-${String(startIndex + index + 1).padStart(3, "0")}`,
     shelfLocation: book.shelfLocation || null,
     available: true,
   }));
+}
+
+function buildMissingBookCopyData(book, existingCopies, missingCount) {
+  const existingBarcodes = new Set(existingCopies.map((copy) => copy.barcode));
+  const existingAvailableCount = existingCopies.filter((copy) => copy.available).length;
+  const availableToCreate = Math.max(Number(book.availableCopies || 0) - existingAvailableCount, 0);
+  const data = [];
+  let sequence = 1;
+
+  while (data.length < missingCount) {
+    const barcode = `${book.isbn}-${String(sequence).padStart(3, "0")}`;
+    sequence += 1;
+
+    if (existingBarcodes.has(barcode)) {
+      continue;
+    }
+
+    existingBarcodes.add(barcode);
+    data.push({
+      bookId: book.id,
+      barcode,
+      shelfLocation: book.shelfLocation || null,
+      available: data.length < availableToCreate,
+    });
+  }
+
+  return data;
+}
+
+function toBookCopySummary(copy) {
+  return {
+    id: copy.id,
+    barcode: copy.barcode,
+    shelfLocation: copy.shelfLocation,
+    available: copy.available,
+    createdAt: formatDateTime(copy.createdAt),
+  };
 }
 
 /**
@@ -470,6 +507,48 @@ async function viewBooks(query) {
     page,
     size,
     list: books.map((book) => toBookSummary(book, borrowedMap.get(book.id) || 0)),
+  };
+}
+
+async function getBookDetail(bookId) {
+  let book = await prisma.book.findUnique({
+    where: { id: bookId },
+    include: {
+      copies: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!book) {
+    throw new AppError(404, "Book not found");
+  }
+
+  const borrowedCopies = await getBorrowedCopies(book.id);
+  const expectedCopyCount = Math.max(
+    book.copies.length,
+    Number(book.availableCopies || 0) + borrowedCopies,
+  );
+  const missingCopyCount = expectedCopyCount - book.copies.length;
+
+  if (missingCopyCount > 0) {
+    await prisma.bookCopy.createMany({
+      data: buildMissingBookCopyData(book, book.copies, missingCopyCount),
+    });
+
+    book = await prisma.book.findUnique({
+      where: { id: bookId },
+      include: {
+        copies: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+  }
+
+  return {
+    ...toBookDetail(book, borrowedCopies),
+    copies: book.copies.map(toBookCopySummary),
   };
 }
 
@@ -792,6 +871,7 @@ module.exports = {
   addBook,
   editBook,
   viewBooks,
+  getBookDetail,
   lookupBarcode,
   getFineDashboard,
   deleteBook,
